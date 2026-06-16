@@ -860,10 +860,62 @@ function validasi_detail_jurnal($data)
     return [$detail, $totalDebit, $totalKredit];
 }
 
-function simpan_jurnal($data)
+function ambil_relasi_by_jurnal_id($jurnalId)
 {
     global $koneksi;
 
+    $jurnalId = (int) $jurnalId;
+    $stmt = $koneksi->prepare('SELECT * FROM hutang_piutang WHERE jurnal_id = ? ORDER BY id ASC LIMIT 1');
+    $stmt->bind_param('i', $jurnalId);
+    $stmt->execute();
+    $hasil = $stmt->get_result();
+    $relasi = $hasil ? $hasil->fetch_assoc() : null;
+    $stmt->close();
+
+    return $relasi;
+}
+
+function pastikan_jurnal_bisa_dimutasi($jurnalId)
+{
+    $relasi = ambil_relasi_by_jurnal_id($jurnalId);
+    if ($relasi && round((float) ($relasi['dibayar'] ?? 0), 2) > 0) {
+        throw new Exception('Jurnal tidak bisa diubah atau dihapus karena hutang/piutangnya sudah memiliki pembayaran.');
+    }
+
+    return $relasi;
+}
+
+function ambil_jurnal_by_id($jurnalId)
+{
+    global $koneksi;
+
+    $jurnalId = (int) $jurnalId;
+    $stmtJurnal = $koneksi->prepare('SELECT * FROM jurnal WHERE id = ? LIMIT 1');
+    $stmtJurnal->bind_param('i', $jurnalId);
+    $stmtJurnal->execute();
+    $hasilJurnal = $stmtJurnal->get_result();
+    $jurnal = $hasilJurnal ? $hasilJurnal->fetch_assoc() : null;
+    $stmtJurnal->close();
+
+    if (!$jurnal) {
+        return null;
+    }
+
+    $stmtDetail = $koneksi->prepare('SELECT akun_id, debit, kredit FROM jurnal_detail WHERE jurnal_id = ? ORDER BY id ASC');
+    $stmtDetail->bind_param('i', $jurnalId);
+    $stmtDetail->execute();
+    $hasilDetail = $stmtDetail->get_result();
+    $detail = $hasilDetail ? $hasilDetail->fetch_all(MYSQLI_ASSOC) : [];
+    $stmtDetail->close();
+
+    $jurnal['detail'] = $detail;
+    $jurnal['relasi'] = ambil_relasi_by_jurnal_id($jurnalId);
+
+    return $jurnal;
+}
+
+function normalisasi_input_jurnal($data)
+{
     $tanggal = $data['tanggal'] ?? date('Y-m-d');
     $nomorBukti = trim($data['nomor_bukti'] ?? '');
     $keterangan = trim($data['keterangan'] ?? '');
@@ -883,11 +935,68 @@ function simpan_jurnal($data)
 
     [$detail] = validasi_detail_jurnal($data);
 
+    return [
+        'tanggal' => $tanggal,
+        'nomor_bukti' => $nomorBukti,
+        'keterangan' => $keterangan,
+        'jenis_transaksi' => $jenisTransaksi,
+        'kontak_id' => $kontakId,
+        'jatuh_tempo' => $jatuhTempo,
+        'nominal_relasi' => $nominalRelasi,
+        'detail' => $detail,
+    ];
+}
+
+function simpan_detail_jurnal($jurnalId, array $detail)
+{
+    global $koneksi;
+
+    $stmtDetail = $koneksi->prepare('INSERT INTO jurnal_detail (jurnal_id, akun_id, debit, kredit) VALUES (?, ?, ?, ?)');
+
+    foreach ($detail as $baris) {
+        $stmtDetail->bind_param('iidd', $jurnalId, $baris['akun_id'], $baris['debit'], $baris['kredit']);
+
+        if (!$stmtDetail->execute()) {
+            throw new Exception('Gagal menyimpan detail jurnal: ' . $stmtDetail->error);
+        }
+    }
+
+    $stmtDetail->close();
+}
+
+function sinkronkan_relasi_jurnal($jurnalId, array $inputJurnal)
+{
+    global $koneksi;
+
+    $stmtHapus = $koneksi->prepare('DELETE FROM hutang_piutang WHERE jurnal_id = ?');
+    $stmtHapus->bind_param('i', $jurnalId);
+    $stmtHapus->execute();
+    $stmtHapus->close();
+
+    if (in_array($inputJurnal['jenis_transaksi'], ['Hutang', 'Piutang'], true) && $inputJurnal['kontak_id'] > 0 && $inputJurnal['nominal_relasi'] > 0) {
+        $stmtRelasi = $koneksi->prepare('INSERT INTO hutang_piutang (jurnal_id, kontak_id, jenis, tanggal, jatuh_tempo, keterangan, nominal, dibayar, status) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)');
+        $status = 'Belum Lunas';
+        $jatuhTempoSimpan = $inputJurnal['jatuh_tempo'] !== '' ? $inputJurnal['jatuh_tempo'] : null;
+        $stmtRelasi->bind_param('iissssds', $jurnalId, $inputJurnal['kontak_id'], $inputJurnal['jenis_transaksi'], $inputJurnal['tanggal'], $jatuhTempoSimpan, $inputJurnal['keterangan'], $inputJurnal['nominal_relasi'], $status);
+
+        if (!$stmtRelasi->execute()) {
+            throw new Exception('Gagal menyimpan data hutang/piutang: ' . $stmtRelasi->error);
+        }
+
+        $stmtRelasi->close();
+    }
+}
+
+function simpan_jurnal($data)
+{
+    global $koneksi;
+    $inputJurnal = normalisasi_input_jurnal($data);
+
     $koneksi->begin_transaction();
 
     try {
         $stmtJurnal = $koneksi->prepare('INSERT INTO jurnal (tanggal, nomor_bukti, keterangan, jenis_transaksi) VALUES (?, ?, ?, ?)');
-        $stmtJurnal->bind_param('ssss', $tanggal, $nomorBukti, $keterangan, $jenisTransaksi);
+        $stmtJurnal->bind_param('ssss', $inputJurnal['tanggal'], $inputJurnal['nomor_bukti'], $inputJurnal['keterangan'], $inputJurnal['jenis_transaksi']);
 
         if (!$stmtJurnal->execute()) {
             throw new Exception('Gagal menyimpan jurnal: ' . $stmtJurnal->error);
@@ -896,31 +1005,84 @@ function simpan_jurnal($data)
         $jurnalId = $stmtJurnal->insert_id;
         $stmtJurnal->close();
 
-        $stmtDetail = $koneksi->prepare('INSERT INTO jurnal_detail (jurnal_id, akun_id, debit, kredit) VALUES (?, ?, ?, ?)');
+        simpan_detail_jurnal($jurnalId, $inputJurnal['detail']);
+        sinkronkan_relasi_jurnal($jurnalId, $inputJurnal);
 
-        foreach ($detail as $baris) {
-            $stmtDetail->bind_param('iidd', $jurnalId, $baris['akun_id'], $baris['debit'], $baris['kredit']);
+        $koneksi->commit();
+    } catch (Throwable $exception) {
+        $koneksi->rollback();
+        throw $exception;
+    }
+}
 
-            if (!$stmtDetail->execute()) {
-                throw new Exception('Gagal menyimpan detail jurnal: ' . $stmtDetail->error);
-            }
+function ubah_jurnal($jurnalId, $data)
+{
+    global $koneksi;
+
+    $jurnalId = (int) $jurnalId;
+    $jurnal = ambil_jurnal_by_id($jurnalId);
+    if (!$jurnal) {
+        throw new Exception('Jurnal yang akan diubah tidak ditemukan.');
+    }
+
+    pastikan_jurnal_bisa_dimutasi($jurnalId);
+    $inputJurnal = normalisasi_input_jurnal($data);
+
+    $koneksi->begin_transaction();
+
+    try {
+        $stmtJurnal = $koneksi->prepare('UPDATE jurnal SET tanggal = ?, nomor_bukti = ?, keterangan = ?, jenis_transaksi = ? WHERE id = ?');
+        $stmtJurnal->bind_param('ssssi', $inputJurnal['tanggal'], $inputJurnal['nomor_bukti'], $inputJurnal['keterangan'], $inputJurnal['jenis_transaksi'], $jurnalId);
+
+        if (!$stmtJurnal->execute()) {
+            throw new Exception('Gagal mengubah jurnal: ' . $stmtJurnal->error);
         }
 
-        $stmtDetail->close();
+        $stmtJurnal->close();
 
-        if (in_array($jenisTransaksi, ['Hutang', 'Piutang'], true) && $kontakId > 0 && $nominalRelasi > 0) {
-            $stmtRelasi = $koneksi->prepare('INSERT INTO hutang_piutang (jurnal_id, kontak_id, jenis, tanggal, jatuh_tempo, keterangan, nominal, dibayar, status) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)');
-            $status = 'Belum Lunas';
-            $jatuhTempoSimpan = $jatuhTempo !== '' ? $jatuhTempo : null;
-            $stmtRelasi->bind_param('iissssds', $jurnalId, $kontakId, $jenisTransaksi, $tanggal, $jatuhTempoSimpan, $keterangan, $nominalRelasi, $status);
+        $stmtHapusDetail = $koneksi->prepare('DELETE FROM jurnal_detail WHERE jurnal_id = ?');
+        $stmtHapusDetail->bind_param('i', $jurnalId);
+        $stmtHapusDetail->execute();
+        $stmtHapusDetail->close();
 
-            if (!$stmtRelasi->execute()) {
-                throw new Exception('Gagal menyimpan data hutang/piutang: ' . $stmtRelasi->error);
-            }
+        simpan_detail_jurnal($jurnalId, $inputJurnal['detail']);
+        sinkronkan_relasi_jurnal($jurnalId, $inputJurnal);
 
-            $stmtRelasi->close();
+        $koneksi->commit();
+    } catch (Throwable $exception) {
+        $koneksi->rollback();
+        throw $exception;
+    }
+}
+
+function hapus_jurnal($jurnalId)
+{
+    global $koneksi;
+
+    $jurnalId = (int) $jurnalId;
+    $jurnal = ambil_jurnal_by_id($jurnalId);
+    if (!$jurnal) {
+        throw new Exception('Jurnal yang akan dihapus tidak ditemukan.');
+    }
+
+    pastikan_jurnal_bisa_dimutasi($jurnalId);
+
+    $koneksi->begin_transaction();
+
+    try {
+        $stmtHapusRelasi = $koneksi->prepare('DELETE FROM hutang_piutang WHERE jurnal_id = ?');
+        $stmtHapusRelasi->bind_param('i', $jurnalId);
+        $stmtHapusRelasi->execute();
+        $stmtHapusRelasi->close();
+
+        $stmtHapusJurnal = $koneksi->prepare('DELETE FROM jurnal WHERE id = ?');
+        $stmtHapusJurnal->bind_param('i', $jurnalId);
+
+        if (!$stmtHapusJurnal->execute()) {
+            throw new Exception('Gagal menghapus jurnal: ' . $stmtHapusJurnal->error);
         }
 
+        $stmtHapusJurnal->close();
         $koneksi->commit();
     } catch (Throwable $exception) {
         $koneksi->rollback();
