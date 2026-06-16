@@ -267,6 +267,18 @@ a {
     align-items: end;
 }
 
+.compact-filter-grid {
+    margin-bottom: 18px;
+}
+
+.align-end-actions {
+    align-self: end;
+}
+
+.compact-cards {
+    margin-bottom: 18px;
+}
+
 .checkbox-row {
     display: flex !important;
     align-items: center;

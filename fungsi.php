@@ -100,6 +100,23 @@ function sinkronisasi_skema_pengaturan()
     $sudahDicek = true;
 }
 
+function sinkronisasi_skema_kontak()
+{
+    static $sudahDicek = false;
+    global $koneksi;
+
+    if ($sudahDicek || !database_terpasang()) {
+        return;
+    }
+
+    $hasil = $koneksi->query("SHOW COLUMNS FROM kontak LIKE 'kode_kontak'");
+    if ($hasil && $hasil->num_rows === 0) {
+        $koneksi->query("ALTER TABLE kontak ADD COLUMN kode_kontak VARCHAR(50) NULL AFTER id");
+    }
+
+    $sudahDicek = true;
+}
+
 function sinkronisasi_skema_tahun_buku()
 {
     static $sudahDicek = false;
@@ -595,6 +612,8 @@ function ambil_daftar_kontak($jenis = '')
 {
     global $koneksi;
 
+    sinkronisasi_skema_kontak();
+
     if ($jenis === '') {
         return kueri_semua("SELECT * FROM kontak WHERE aktif = 1 ORDER BY nama ASC");
     }
@@ -788,6 +807,9 @@ function simpan_kontak($data)
 {
     global $koneksi;
 
+    sinkronisasi_skema_kontak();
+
+    $kodeKontak = trim($data['kode_kontak'] ?? '');
     $nama = trim($data['nama'] ?? '');
     $jenis = trim($data['jenis'] ?? 'Pelanggan');
     $telepon = trim($data['telepon'] ?? '');
@@ -797,8 +819,32 @@ function simpan_kontak($data)
         throw new Exception('Nama kontak wajib diisi.');
     }
 
-    $stmt = $koneksi->prepare('INSERT INTO kontak (nama, jenis, telepon, alamat, aktif) VALUES (?, ?, ?, ?, 1)');
-    $stmt->bind_param('ssss', $nama, $jenis, $telepon, $alamat);
+    $stmtCek = $koneksi->prepare('SELECT id FROM kontak WHERE LOWER(nama) = LOWER(?) AND jenis = ? AND aktif = 1 LIMIT 1');
+    $stmtCek->bind_param('ss', $nama, $jenis);
+    $stmtCek->execute();
+    $hasilCek = $stmtCek->get_result();
+    $kontakAda = $hasilCek ? $hasilCek->fetch_assoc() : null;
+    $stmtCek->close();
+
+    if ($kontakAda) {
+        throw new Exception('Kontak dengan nama dan jenis yang sama sudah ada.');
+    }
+
+    if ($kodeKontak !== '') {
+        $stmtKode = $koneksi->prepare('SELECT id FROM kontak WHERE LOWER(kode_kontak) = LOWER(?) LIMIT 1');
+        $stmtKode->bind_param('s', $kodeKontak);
+        $stmtKode->execute();
+        $hasilKode = $stmtKode->get_result();
+        $kodeAda = $hasilKode ? $hasilKode->fetch_assoc() : null;
+        $stmtKode->close();
+
+        if ($kodeAda) {
+            throw new Exception('Kode kontak sudah digunakan.');
+        }
+    }
+
+    $stmt = $koneksi->prepare('INSERT INTO kontak (kode_kontak, nama, jenis, telepon, alamat, aktif) VALUES (?, ?, ?, ?, ?, 1)');
+    $stmt->bind_param('sssss', $kodeKontak, $nama, $jenis, $telepon, $alamat);
 
     if (!$stmt->execute()) {
         $pesan = $stmt->error;
@@ -807,6 +853,106 @@ function simpan_kontak($data)
     }
 
     $stmt->close();
+}
+
+function simpan_kontak_jika_belum_ada($nama, $jenis = 'Pemasok', $telepon = '', $alamat = '')
+{
+    global $koneksi;
+
+    sinkronisasi_skema_kontak();
+
+    $nama = trim((string) $nama);
+    $jenis = trim((string) $jenis);
+    $telepon = trim((string) $telepon);
+    $alamat = trim((string) $alamat);
+
+    if ($nama === '') {
+        return false;
+    }
+
+    $stmtCek = $koneksi->prepare('SELECT id FROM kontak WHERE LOWER(nama) = LOWER(?) AND jenis = ? LIMIT 1');
+    $stmtCek->bind_param('ss', $nama, $jenis);
+    $stmtCek->execute();
+    $hasilCek = $stmtCek->get_result();
+    $kontakAda = $hasilCek ? $hasilCek->fetch_assoc() : null;
+    $stmtCek->close();
+
+    if ($kontakAda) {
+        $stmtAktif = $koneksi->prepare('UPDATE kontak SET aktif = 1 WHERE id = ?');
+        $idKontak = (int) $kontakAda['id'];
+        $stmtAktif->bind_param('i', $idKontak);
+        $stmtAktif->execute();
+        $stmtAktif->close();
+
+        return false;
+    }
+
+    $stmt = $koneksi->prepare('INSERT INTO kontak (nama, jenis, telepon, alamat, aktif) VALUES (?, ?, ?, ?, 1)');
+    $stmt->bind_param('ssss', $nama, $jenis, $telepon, $alamat);
+    $berhasil = $stmt->execute();
+    $stmt->close();
+
+    return $berhasil;
+}
+
+function simpan_kontak_berkode_jika_belum_ada($kodeKontak, $nama, $jenis = 'Pemasok', $telepon = '', $alamat = '')
+{
+    global $koneksi;
+
+    sinkronisasi_skema_kontak();
+
+    $kodeKontak = trim((string) $kodeKontak);
+    $nama = trim((string) $nama);
+    $jenis = trim((string) $jenis);
+    $telepon = trim((string) $telepon);
+    $alamat = trim((string) $alamat);
+
+    if ($nama === '') {
+        return false;
+    }
+
+    if ($kodeKontak !== '') {
+        $stmtKode = $koneksi->prepare('SELECT id FROM kontak WHERE LOWER(kode_kontak) = LOWER(?) LIMIT 1');
+        $stmtKode->bind_param('s', $kodeKontak);
+        $stmtKode->execute();
+        $hasilKode = $stmtKode->get_result();
+        $kontakAda = $hasilKode ? $hasilKode->fetch_assoc() : null;
+        $stmtKode->close();
+
+        if ($kontakAda) {
+            $stmtAktif = $koneksi->prepare('UPDATE kontak SET aktif = 1 WHERE id = ?');
+            $idKontak = (int) $kontakAda['id'];
+            $stmtAktif->bind_param('i', $idKontak);
+            $stmtAktif->execute();
+            $stmtAktif->close();
+
+            return false;
+        }
+    }
+
+    $stmtNama = $koneksi->prepare('SELECT id FROM kontak WHERE LOWER(nama) = LOWER(?) AND jenis = ? LIMIT 1');
+    $stmtNama->bind_param('ss', $nama, $jenis);
+    $stmtNama->execute();
+    $hasilNama = $stmtNama->get_result();
+    $kontakNamaAda = $hasilNama ? $hasilNama->fetch_assoc() : null;
+    $stmtNama->close();
+
+    if ($kontakNamaAda) {
+        $stmtUpdate = $koneksi->prepare('UPDATE kontak SET kode_kontak = COALESCE(NULLIF(kode_kontak, \'\'), ?), aktif = 1 WHERE id = ?');
+        $idKontak = (int) $kontakNamaAda['id'];
+        $stmtUpdate->bind_param('si', $kodeKontak, $idKontak);
+        $stmtUpdate->execute();
+        $stmtUpdate->close();
+
+        return false;
+    }
+
+    $stmt = $koneksi->prepare('INSERT INTO kontak (kode_kontak, nama, jenis, telepon, alamat, aktif) VALUES (?, ?, ?, ?, ?, 1)');
+    $stmt->bind_param('sssss', $kodeKontak, $nama, $jenis, $telepon, $alamat);
+    $berhasil = $stmt->execute();
+    $stmt->close();
+
+    return $berhasil;
 }
 
 function validasi_detail_jurnal($data)
@@ -1610,13 +1756,51 @@ function ringkasan_neraca()
     return $hasil;
 }
 
-function ambil_relasi_hutang_piutang()
+function ambil_relasi_hutang_piutang($filter = [])
 {
-    return kueri_semua(
-        "SELECT hp.*, k.nama AS nama_kontak,
-                (hp.nominal - hp.dibayar) AS sisa
-         FROM hutang_piutang hp
-         INNER JOIN kontak k ON k.id = hp.kontak_id
-         ORDER BY hp.tanggal DESC, hp.id DESC"
-    );
+    global $koneksi;
+
+    $jenis = trim($filter['jenis'] ?? '');
+    $status = trim($filter['status'] ?? '');
+    $kontakId = (int) ($filter['kontak_id'] ?? 0);
+
+    $sql = "SELECT hp.*, k.nama AS nama_kontak, k.jenis AS jenis_kontak, k.kode_kontak,
+                   (hp.nominal - hp.dibayar) AS sisa
+            FROM hutang_piutang hp
+            INNER JOIN kontak k ON k.id = hp.kontak_id
+            WHERE 1 = 1";
+    $types = '';
+    $params = [];
+
+    if ($jenis !== '' && in_array($jenis, ['Hutang', 'Piutang'], true)) {
+        $sql .= ' AND hp.jenis = ?';
+        $types .= 's';
+        $params[] = $jenis;
+    }
+
+    if ($status !== '' && in_array($status, ['Belum Lunas', 'Sebagian', 'Lunas'], true)) {
+        $sql .= ' AND hp.status = ?';
+        $types .= 's';
+        $params[] = $status;
+    }
+
+    if ($kontakId > 0) {
+        $sql .= ' AND hp.kontak_id = ?';
+        $types .= 'i';
+        $params[] = $kontakId;
+    }
+
+    $sql .= ' ORDER BY hp.tanggal DESC, hp.id DESC';
+    $stmt = $koneksi->prepare($sql);
+
+    if ($types !== '') {
+        $stmt->bind_param($types, ...$params);
+    }
+
+    $stmt->execute();
+    $hasil = $stmt->get_result();
+    $data = $hasil ? $hasil->fetch_all(MYSQLI_ASSOC) : [];
+    $stmt->close();
+
+    return $data;
 }

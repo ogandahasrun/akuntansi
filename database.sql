@@ -213,6 +213,7 @@ CREATE TABLE IF NOT EXISTS saldo_awal_akun (
 
 CREATE TABLE IF NOT EXISTS kontak (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    kode_kontak VARCHAR(50) NULL,
     nama VARCHAR(120) NOT NULL,
     jenis ENUM('Pelanggan', 'Pemasok') NOT NULL,
     telepon VARCHAR(50) NULL,

@@ -100,11 +100,11 @@ render_header('Jurnal Umum', 'jurnal');
             </select>
         </label>
         <label>
-            <span>Kontak Terkait</span>
+            <span id="labelKontakTerkait">Kontak Terkait</span>
             <select name="kontak_id" id="kontakId">
                 <option value="0">Tidak ada</option>
                 <?php foreach ($kontak as $item) { ?>
-                    <option value="<?php echo (int) $item['id']; ?>" <?php echo $nilaiKontakId === (int) $item['id'] ? 'selected' : ''; ?>><?php echo e($item['nama'] . ' - ' . $item['jenis']); ?></option>
+                    <option value="<?php echo (int) $item['id']; ?>" data-jenis="<?php echo e($item['jenis']); ?>" <?php echo $nilaiKontakId === (int) $item['id'] ? 'selected' : ''; ?>><?php echo e($item['nama'] . ' - ' . $item['jenis']); ?></option>
                 <?php } ?>
             </select>
         </label>
@@ -157,7 +157,7 @@ render_header('Jurnal Umum', 'jurnal');
             <?php } ?>
         </div>
     </form>
-    <p class="helper-text">Baris yang kosong boleh dibiarkan. Jurnal tetap harus minimal dua baris terisi dan total debit-kredit harus seimbang. Untuk hutang atau piutang, pilih kontak terkait dan isi nominal relasi agar masuk juga ke daftar tagihan. Jurnal yang hutang/piutangnya sudah pernah dibayar tidak bisa diubah atau dihapus.</p>
+    <p class="helper-text">Baris yang kosong boleh dibiarkan. Jurnal tetap harus minimal dua baris terisi dan total debit-kredit harus seimbang. Untuk transaksi hutang pembelian, pilih jenis `Hutang`, pilih supplier `Pemasok`, lalu isi nominal relasi agar masuk ke daftar tagihan. Jurnal yang hutang/piutangnya sudah pernah dibayar tidak bisa diubah atau dihapus.</p>
 </section>
 
 <section class="panel">
@@ -219,9 +219,34 @@ document.getElementById('tambahBaris').addEventListener('click', function () {
 function aturFieldRelasi() {
     const jenis = document.getElementById('jenisTransaksi').value;
     const aktif = jenis === 'Hutang' || jenis === 'Piutang';
-    document.getElementById('kontakId').required = aktif;
+    const selectKontak = document.getElementById('kontakId');
+    const labelKontak = document.getElementById('labelKontakTerkait');
+    const targetJenis = jenis === 'Hutang' ? 'Pemasok' : (jenis === 'Piutang' ? 'Pelanggan' : '');
+
+    labelKontak.textContent = jenis === 'Hutang'
+        ? 'Supplier Pemasok'
+        : (jenis === 'Piutang' ? 'Pelanggan' : 'Kontak Terkait');
+
+    selectKontak.required = aktif;
     document.getElementById('jatuhTempo').required = aktif;
     document.getElementById('nominalRelasi').required = aktif;
+
+    Array.from(selectKontak.options).forEach(function (option, index) {
+        if (index === 0) {
+            option.hidden = false;
+            option.disabled = false;
+            return;
+        }
+
+        const jenisKontak = option.getAttribute('data-jenis') || '';
+        const cocok = targetJenis === '' || jenisKontak === targetJenis;
+        option.hidden = !cocok;
+        option.disabled = !cocok;
+    });
+
+    if (selectKontak.selectedOptions.length > 0 && selectKontak.selectedOptions[0].disabled) {
+        selectKontak.value = '0';
+    }
 }
 
 document.getElementById('jenisTransaksi').addEventListener('change', aturFieldRelasi);
