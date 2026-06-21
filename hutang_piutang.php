@@ -181,14 +181,27 @@ render_header('Hutang dan Piutang', 'hutang_piutang');
                     <td class="align-right"><?php echo e(format_rupiah($baris['sisa'])); ?></td>
                     <td><?php echo e($baris['status']); ?></td>
                     <td>
-                        <?php if ((float) $baris['sisa'] > 0) { ?>
+                        <?php
+                        $jurnalBayarId = (int) ($baris['jurnal_bayar_id'] ?? 0);
+                        $sudahLunas    = $baris['status'] === 'Lunas';
+                        $bayarViaJurnal = $jurnalBayarId > 0;
+                        ?>
+                        <?php if ($bayarViaJurnal) { ?>
+                            <a href="jurnal_umum.php?edit=<?php echo $jurnalBayarId; ?>"
+                               class="badge success"
+                               title="Dilunasi via Jurnal #<?php echo $jurnalBayarId; ?>"
+                               style="text-decoration:none">
+                               ✓ Via Jurnal #<?php echo $jurnalBayarId; ?>
+                            </a>
+                        <?php } ?>
+                        <?php if ((float) $baris['sisa'] > 0 && !$bayarViaJurnal) { ?>
                             <form method="post" class="inline-form">
                                 <input type="hidden" name="aksi" value="bayar_relasi">
                                 <input type="hidden" name="id_relasi" value="<?php echo (int) $baris['id']; ?>">
                                 <input type="number" name="jumlah_bayar" min="0" step="0.01" placeholder="Bayar" required>
                                 <button type="submit" class="button small">Simpan</button>
                             </form>
-                        <?php } else { ?>
+                        <?php } elseif ($sudahLunas && !$bayarViaJurnal) { ?>
                             <span class="badge success">Selesai</span>
                         <?php } ?>
                     </td>

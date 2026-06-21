@@ -48,6 +48,12 @@ if ($metodeRequest === 'POST' && ($_POST['aksi'] ?? '') === 'hapus_akun') {
 
 $akun = ambil_daftar_akun();
 
+// Daftar akun yang boleh jadi induk: akun yang belum punya parent (level 1 saja)
+$akunCalonInduk = array_filter($akun, function ($a) use ($akunEditId) {
+    // Bukan sub-akun lain (parent_id kosong), bukan dirinya sendiri
+    return empty($a['parent_id']) && (int) $a['id'] !== $akunEditId;
+});
+
 if ($akunEdit && (int) $akunEdit['aktif'] !== 1) {
     $akunEdit = null;
 }
@@ -64,11 +70,23 @@ render_header('Daftar Akun', 'akun');
             <?php } ?>
             <label>
                 <span>Kode Akun</span>
-                <input type="text" name="kode_akun" placeholder="Contoh: 101" value="<?php echo e($akunEdit['kode_akun'] ?? ''); ?>" required>
+                <input type="text" name="kode_akun" placeholder="Contoh: 2-1201" value="<?php echo e($akunEdit['kode_akun'] ?? ''); ?>" required>
             </label>
             <label>
                 <span>Nama Akun</span>
-                <input type="text" name="nama_akun" placeholder="Contoh: Kas" value="<?php echo e($akunEdit['nama_akun'] ?? ''); ?>" required>
+                <input type="text" name="nama_akun" placeholder="Contoh: Hutang - PT Kimia Farma" value="<?php echo e($akunEdit['nama_akun'] ?? ''); ?>" required>
+            </label>
+            <label>
+                <span>Akun Induk <small style="color:var(--text-subtle)">(opsional — untuk sub-rekening)</small></span>
+                <select name="parent_id">
+                    <option value="">— Tidak ada (akun utama) —</option>
+                    <?php foreach ($akunCalonInduk as $induk) { ?>
+                        <option value="<?php echo (int) $induk['id']; ?>"
+                            <?php echo ((int) ($akunEdit['parent_id'] ?? 0)) === (int) $induk['id'] ? 'selected' : ''; ?>>
+                            <?php echo e($induk['kode_akun'] . ' — ' . $induk['nama_akun']); ?>
+                        </option>
+                    <?php } ?>
+                </select>
             </label>
             <label>
                 <span>Kategori</span>
@@ -99,8 +117,9 @@ render_header('Daftar Akun', 'akun');
     </article>
     <article class="panel">
         <h3>Catatan Penggunaan</h3>
-        <p>Akun kas atau bank akan muncul otomatis dalam laporan arus kas. Pastikan tipe saldo sesuai kaidah akuntansi agar buku besar dan neraca akurat.</p>
-        <p>Akun yang sudah pernah dipakai pada jurnal tidak dapat dihapus agar histori transaksi tetap aman. Akun tersebut masih bisa diedit bila diperlukan.</p>
+        <p>Pilih <strong>Akun Induk</strong> untuk membuat sub-rekening. Misalnya, buat akun <em>"Hutang Obat &amp; BHP"</em> sebagai induk, lalu buat <em>"Hutang - PT Kimia Farma"</em> sebagai sub-akunnya.</p>
+        <p>Akun induk <strong>tidak bisa dipakai langsung</strong> pada jurnal — hanya sub-akunnya yang bisa. Saldo akun induk dihitung otomatis dari penjumlahan seluruh sub-akunnya.</p>
+        <p>Akun yang sudah pernah dipakai pada jurnal tidak dapat dihapus agar histori transaksi tetap aman.</p>
     </article>
 </section>
 
@@ -119,10 +138,27 @@ render_header('Daftar Akun', 'akun');
             </tr>
         </thead>
         <tbody>
-            <?php foreach ($akun as $baris) { ?>
-                <tr>
-                    <td><?php echo e($baris['kode_akun']); ?></td>
-                    <td><?php echo e($baris['nama_akun']); ?></td>
+            <?php foreach ($akun as $baris) {
+                $adaSubAkun   = (int) ($baris['jumlah_sub_akun'] ?? 0) > 0;
+                $adalahSubAkun = !empty($baris['parent_id']);
+            ?>
+                <tr <?php echo $adaSubAkun ? 'style="background:var(--bg-subtle,#f8f9fb)"' : ''; ?>>
+                    <td>
+                        <?php if ($adalahSubAkun) { ?>
+                            <span style="color:var(--text-subtle);margin-right:4px">└</span>
+                        <?php } ?>
+                        <?php echo e($baris['kode_akun']); ?>
+                    </td>
+                    <td>
+                        <?php if ($adaSubAkun) { ?>
+                            <strong><?php echo e($baris['nama_akun']); ?></strong>
+                            <span style="margin-left:6px;font-size:0.7rem;background:var(--accent-subtle,#e8f0fe);color:var(--accent,#4a6cf7);border-radius:4px;padding:1px 6px;display:inline-block">Induk</span>
+                        <?php } elseif ($adalahSubAkun) { ?>
+                            <span style="padding-left:1.2em"><?php echo e($baris['nama_akun']); ?></span>
+                        <?php } else { ?>
+                            <?php echo e($baris['nama_akun']); ?>
+                        <?php } ?>
+                    </td>
                     <td><?php echo e($baris['kategori']); ?></td>
                     <td><?php echo e($baris['tipe_saldo']); ?></td>
                     <td><?php echo $baris['is_kas'] ? 'Ya' : 'Tidak'; ?></td>

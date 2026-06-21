@@ -117,6 +117,61 @@ function sinkronisasi_skema_kontak()
     $sudahDicek = true;
 }
 
+function sinkronisasi_skema_akun()
+{
+    static $sudahDicek = false;
+    global $koneksi;
+
+    if ($sudahDicek || !database_terpasang()) {
+        return;
+    }
+
+    // Tambah kolom parent_id jika belum ada
+    $hasil = $koneksi->query("SHOW COLUMNS FROM akun LIKE 'parent_id'");
+    if ($hasil && $hasil->num_rows === 0) {
+        $koneksi->query("ALTER TABLE akun ADD COLUMN parent_id INT NULL DEFAULT NULL AFTER kode_akun");
+        // Tambah foreign key (ignore error jika sudah ada)
+        $koneksi->query(
+            "ALTER TABLE akun ADD CONSTRAINT fk_akun_parent FOREIGN KEY (parent_id) REFERENCES akun(id) ON DELETE SET NULL"
+        );
+    }
+
+    $sudahDicek = true;
+}
+
+function sinkronisasi_skema_jurnal()
+{
+    static $sudahDicek = false;
+    global $koneksi;
+
+    if ($sudahDicek || !database_terpasang()) {
+        return;
+    }
+
+    // Perluas ENUM jenis_transaksi dengan nilai Bayar Hutang dan Terima Piutang
+    $koneksi->query(
+        "ALTER TABLE jurnal MODIFY jenis_transaksi ENUM('Umum','Kas','Hutang','Piutang','Bayar Hutang','Terima Piutang') NOT NULL DEFAULT 'Umum'"
+    );
+
+    // Tambah kolom hutang_piutang_id jika belum ada
+    $hasil = $koneksi->query("SHOW COLUMNS FROM jurnal LIKE 'hutang_piutang_id'");
+    if ($hasil && $hasil->num_rows === 0) {
+        $koneksi->query(
+            "ALTER TABLE jurnal ADD COLUMN hutang_piutang_id INT NULL DEFAULT NULL AFTER jenis_transaksi"
+        );
+    }
+
+    // Tambah kolom nominal_bayar jika belum ada (menyimpan jumlah yang dibayar via jurnal ini)
+    $hasil2 = $koneksi->query("SHOW COLUMNS FROM jurnal LIKE 'nominal_bayar'");
+    if ($hasil2 && $hasil2->num_rows === 0) {
+        $koneksi->query(
+            "ALTER TABLE jurnal ADD COLUMN nominal_bayar DECIMAL(18,2) NULL DEFAULT NULL AFTER hutang_piutang_id"
+        );
+    }
+
+    $sudahDicek = true;
+}
+
 function sinkronisasi_skema_tahun_buku()
 {
     static $sudahDicek = false;
@@ -414,6 +469,8 @@ function ambil_pengaturan()
 
     sinkronisasi_skema_pengaturan();
     sinkronisasi_skema_tahun_buku();
+    sinkronisasi_skema_akun();
+    sinkronisasi_skema_jurnal();
     sinkronisasi_akun_default();
 
     if ($pengaturan !== null) {
@@ -588,9 +645,40 @@ function render_footer()
 
 function ambil_daftar_akun()
 {
+    sinkronisasi_skema_akun();
     sinkronisasi_akun_default();
 
-    return kueri_semua("SELECT * FROM akun WHERE aktif = 1 ORDER BY kode_akun ASC");
+    return kueri_semua(
+        "SELECT a.*,
+                p.nama_akun AS nama_induk,
+                p.kode_akun AS kode_induk,
+                (SELECT COUNT(*) FROM akun anak WHERE anak.parent_id = a.id AND anak.aktif = 1) AS jumlah_sub_akun
+         FROM akun a
+         LEFT JOIN akun p ON p.id = a.parent_id
+         WHERE a.aktif = 1
+         ORDER BY COALESCE(a.parent_id, a.id), a.parent_id IS NULL DESC, a.kode_akun ASC"
+    );
+}
+
+function ambil_akun_untuk_jurnal()
+{
+    sinkronisasi_skema_akun();
+    sinkronisasi_akun_default();
+
+    // Hanya kembalikan akun leaf (tidak punya sub-akun aktif) agar akun induk
+    // tidak bisa dipakai langsung di baris jurnal.
+    return kueri_semua(
+        "SELECT a.*,
+                p.nama_akun AS nama_induk,
+                p.kode_akun AS kode_induk
+         FROM akun a
+         LEFT JOIN akun p ON p.id = a.parent_id
+         WHERE a.aktif = 1
+           AND NOT EXISTS (
+               SELECT 1 FROM akun anak WHERE anak.parent_id = a.id AND anak.aktif = 1
+           )
+         ORDER BY a.kode_akun ASC"
+    );
 }
 
 function ambil_akun_by_id($id)
@@ -716,18 +804,32 @@ function simpan_akun($data)
 {
     global $koneksi;
 
-    $kodeAkun = trim($data['kode_akun'] ?? '');
-    $namaAkun = trim($data['nama_akun'] ?? '');
-    $kategori = trim($data['kategori'] ?? 'Aset');
+    sinkronisasi_skema_akun();
+
+    $kodeAkun  = trim($data['kode_akun'] ?? '');
+    $namaAkun  = trim($data['nama_akun'] ?? '');
+    $kategori  = trim($data['kategori'] ?? 'Aset');
     $tipeSaldo = trim($data['tipe_saldo'] ?? 'Debit');
-    $isKas = isset($data['is_kas']) ? 1 : 0;
+    $isKas     = isset($data['is_kas']) ? 1 : 0;
+    $parentId  = ($data['parent_id'] ?? '') !== '' ? (int) $data['parent_id'] : null;
 
     if ($kodeAkun === '' || $namaAkun === '') {
         throw new Exception('Kode akun dan nama akun wajib diisi.');
     }
 
-    $stmt = $koneksi->prepare('INSERT INTO akun (kode_akun, nama_akun, kategori, tipe_saldo, is_kas, aktif) VALUES (?, ?, ?, ?, ?, 1)');
-    $stmt->bind_param('ssssi', $kodeAkun, $namaAkun, $kategori, $tipeSaldo, $isKas);
+    // Validasi akun induk: harus ada, aktif, dan bukan sub-akun lain
+    if ($parentId !== null) {
+        $induk = kueri_satu('SELECT id, parent_id FROM akun WHERE id = ' . $parentId . ' AND aktif = 1 LIMIT 1');
+        if (!$induk) {
+            throw new Exception('Akun induk yang dipilih tidak ditemukan atau tidak aktif.');
+        }
+        if (!empty($induk['parent_id'])) {
+            throw new Exception('Akun induk tidak boleh merupakan sub-akun dari akun lain (maksimal 2 level).');
+        }
+    }
+
+    $stmt = $koneksi->prepare('INSERT INTO akun (kode_akun, parent_id, nama_akun, kategori, tipe_saldo, is_kas, aktif) VALUES (?, ?, ?, ?, ?, ?, 1)');
+    $stmt->bind_param('sisssi', $kodeAkun, $parentId, $namaAkun, $kategori, $tipeSaldo, $isKas);
 
     if (!$stmt->execute()) {
         $pesan = $stmt->error;
@@ -742,24 +844,48 @@ function ubah_akun($id, $data)
 {
     global $koneksi;
 
+    sinkronisasi_skema_akun();
+
     $id = (int) $id;
     $akun = ambil_akun_by_id($id);
     if (!$akun || (int) $akun['aktif'] !== 1) {
         throw new Exception('Akun yang akan diubah tidak ditemukan.');
     }
 
-    $kodeAkun = trim($data['kode_akun'] ?? '');
-    $namaAkun = trim($data['nama_akun'] ?? '');
-    $kategori = trim($data['kategori'] ?? 'Aset');
+    $kodeAkun  = trim($data['kode_akun'] ?? '');
+    $namaAkun  = trim($data['nama_akun'] ?? '');
+    $kategori  = trim($data['kategori'] ?? 'Aset');
     $tipeSaldo = trim($data['tipe_saldo'] ?? 'Debit');
-    $isKas = isset($data['is_kas']) ? 1 : 0;
+    $isKas     = isset($data['is_kas']) ? 1 : 0;
+    $parentId  = ($data['parent_id'] ?? '') !== '' ? (int) $data['parent_id'] : null;
 
     if ($kodeAkun === '' || $namaAkun === '') {
         throw new Exception('Kode akun dan nama akun wajib diisi.');
     }
 
-    $stmt = $koneksi->prepare('UPDATE akun SET kode_akun = ?, nama_akun = ?, kategori = ?, tipe_saldo = ?, is_kas = ? WHERE id = ?');
-    $stmt->bind_param('ssssii', $kodeAkun, $namaAkun, $kategori, $tipeSaldo, $isKas, $id);
+    // Tidak boleh menjadikan dirinya sendiri sebagai induk
+    if ($parentId === $id) {
+        throw new Exception('Akun tidak bisa menjadi induk dari dirinya sendiri.');
+    }
+
+    // Tidak boleh menjadi sub-akun jika akun ini sendiri sudah punya sub-akun
+    if ($parentId !== null) {
+        $cekSubAkun = kueri_satu('SELECT COUNT(*) AS total FROM akun WHERE parent_id = ' . $id . ' AND aktif = 1');
+        if ((int) ($cekSubAkun['total'] ?? 0) > 0) {
+            throw new Exception('Akun yang sudah punya sub-akun tidak bisa dijadikan sub-akun dari akun lain.');
+        }
+
+        $induk = kueri_satu('SELECT id, parent_id FROM akun WHERE id = ' . $parentId . ' AND aktif = 1 LIMIT 1');
+        if (!$induk) {
+            throw new Exception('Akun induk yang dipilih tidak ditemukan atau tidak aktif.');
+        }
+        if (!empty($induk['parent_id'])) {
+            throw new Exception('Akun induk tidak boleh merupakan sub-akun dari akun lain (maksimal 2 level).');
+        }
+    }
+
+    $stmt = $koneksi->prepare('UPDATE akun SET kode_akun = ?, parent_id = ?, nama_akun = ?, kategori = ?, tipe_saldo = ?, is_kas = ? WHERE id = ?');
+    $stmt->bind_param('sissiii', $kodeAkun, $parentId, $namaAkun, $kategori, $tipeSaldo, $isKas, $id);
 
     if (!$stmt->execute()) {
         $pesan = $stmt->error;
@@ -778,6 +904,12 @@ function hapus_akun($id)
     $akun = ambil_akun_by_id($id);
     if (!$akun || (int) $akun['aktif'] !== 1) {
         throw new Exception('Akun yang akan dihapus tidak ditemukan.');
+    }
+
+    // Cek apakah akun ini masih punya sub-akun aktif
+    $cekSubAkun = kueri_satu('SELECT COUNT(*) AS total FROM akun WHERE parent_id = ' . $id . ' AND aktif = 1');
+    if ((int) ($cekSubAkun['total'] ?? 0) > 0) {
+        throw new Exception('Akun induk tidak bisa dihapus selama masih memiliki sub-akun aktif.');
     }
 
     $stmtCek = $koneksi->prepare('SELECT COUNT(*) AS total FROM jurnal_detail WHERE akun_id = ?');
@@ -1021,6 +1153,37 @@ function ambil_relasi_by_jurnal_id($jurnalId)
     return $relasi;
 }
 
+function ambil_hutang_belum_lunas_by_kontak($kontakId, $jenis = 'Hutang')
+{
+    global $koneksi;
+
+    sinkronisasi_skema_jurnal();
+
+    $kontakId = (int) $kontakId;
+    if ($kontakId <= 0) {
+        return [];
+    }
+
+    $stmt = $koneksi->prepare(
+        "SELECT hp.*, k.nama AS nama_kontak
+         FROM hutang_piutang hp
+         JOIN kontak k ON k.id = hp.kontak_id
+         WHERE hp.kontak_id = ? AND hp.jenis = ? AND hp.status != 'Lunas'
+         ORDER BY hp.jatuh_tempo ASC, hp.tanggal ASC"
+    );
+    $stmt->bind_param('is', $kontakId, $jenis);
+    $stmt->execute();
+    $hasil = $stmt->get_result();
+    $data = $hasil ? $hasil->fetch_all(MYSQLI_ASSOC) : [];
+    $stmt->close();
+
+    foreach ($data as &$baris) {
+        $baris['sisa'] = round((float) $baris['nominal'] - (float) $baris['dibayar'], 2);
+    }
+
+    return $data;
+}
+
 function pastikan_jurnal_bisa_dimutasi($jurnalId)
 {
     $relasi = ambil_relasi_by_jurnal_id($jurnalId);
@@ -1057,6 +1220,13 @@ function ambil_jurnal_by_id($jurnalId)
     $jurnal['detail'] = $detail;
     $jurnal['relasi'] = ambil_relasi_by_jurnal_id($jurnalId);
 
+    // Include info hutang_piutang_id dan nominal_bayar untuk jurnal jenis Bayar Hutang
+    // (kolom ini mungkin belum ada jika belum dimigrasi)
+    if (!isset($jurnal['hutang_piutang_id'])) {
+        $jurnal['hutang_piutang_id'] = null;
+        $jurnal['nominal_bayar']     = null;
+    }
+
     return $jurnal;
 }
 
@@ -1069,6 +1239,7 @@ function normalisasi_input_jurnal($data)
     $kontakId = (int) ($data['kontak_id'] ?? 0);
     $jatuhTempo = trim($data['jatuh_tempo'] ?? '');
     $nominalRelasi = (float) str_replace(',', '', $data['nominal_relasi'] ?? 0);
+    $hutangPiutangId = (int) ($data['hutang_piutang_id'] ?? 0);
     $tahunBukuAktif = ambil_tahun_buku_aktif();
 
     if ($nomorBukti === '') {
@@ -1079,17 +1250,28 @@ function normalisasi_input_jurnal($data)
         throw new Exception('Tanggal jurnal harus berada dalam tahun buku aktif: ' . $tahunBukuAktif['nama'] . '.');
     }
 
+    // Validasi khusus untuk jenis Bayar Hutang / Terima Piutang
+    if (in_array($jenisTransaksi, ['Bayar Hutang', 'Terima Piutang'], true)) {
+        if ($hutangPiutangId <= 0) {
+            throw new Exception('Pilih faktur yang akan dilunasi.');
+        }
+        if ($nominalRelasi <= 0) {
+            throw new Exception('Nominal pembayaran harus diisi.');
+        }
+    }
+
     [$detail] = validasi_detail_jurnal($data);
 
     return [
-        'tanggal' => $tanggal,
-        'nomor_bukti' => $nomorBukti,
-        'keterangan' => $keterangan,
-        'jenis_transaksi' => $jenisTransaksi,
-        'kontak_id' => $kontakId,
-        'jatuh_tempo' => $jatuhTempo,
-        'nominal_relasi' => $nominalRelasi,
-        'detail' => $detail,
+        'tanggal'           => $tanggal,
+        'nomor_bukti'       => $nomorBukti,
+        'keterangan'        => $keterangan,
+        'jenis_transaksi'   => $jenisTransaksi,
+        'kontak_id'         => $kontakId,
+        'jatuh_tempo'       => $jatuhTempo,
+        'nominal_relasi'    => $nominalRelasi,
+        'hutang_piutang_id' => $hutangPiutangId,
+        'detail'            => $detail,
     ];
 }
 
@@ -1110,26 +1292,118 @@ function simpan_detail_jurnal($jurnalId, array $detail)
     $stmtDetail->close();
 }
 
+function rollback_pembayaran_jurnal($jurnalId)
+{
+    global $koneksi;
+
+    // Baca data jurnal untuk tahu apakah ada pembayaran yang perlu di-rollback
+    $jurnalLama = kueri_satu(
+        "SELECT jenis_transaksi, hutang_piutang_id, nominal_bayar FROM jurnal WHERE id = $jurnalId LIMIT 1"
+    );
+
+    if (
+        $jurnalLama
+        && in_array($jurnalLama['jenis_transaksi'], ['Bayar Hutang', 'Terima Piutang'], true)
+        && (int) ($jurnalLama['hutang_piutang_id'] ?? 0) > 0
+        && (float) ($jurnalLama['nominal_bayar'] ?? 0) > 0
+    ) {
+        $hpId        = (int) $jurnalLama['hutang_piutang_id'];
+        $nominalLama = (float) $jurnalLama['nominal_bayar'];
+
+        $hp = kueri_satu("SELECT nominal, dibayar FROM hutang_piutang WHERE id = $hpId LIMIT 1");
+        if ($hp) {
+            $dibayarBaru = max(0, round((float) $hp['dibayar'] - $nominalLama, 2));
+            $nominal     = (float) $hp['nominal'];
+            $status      = $dibayarBaru <= 0 ? 'Belum Lunas' : ($dibayarBaru < $nominal ? 'Sebagian' : 'Lunas');
+
+            $stmt = $koneksi->prepare('UPDATE hutang_piutang SET dibayar = ?, status = ? WHERE id = ?');
+            $stmt->bind_param('dsi', $dibayarBaru, $status, $hpId);
+            $stmt->execute();
+            $stmt->close();
+        }
+
+        // Reset kolom pembayaran di jurnal
+        $koneksi->query("UPDATE jurnal SET hutang_piutang_id = NULL, nominal_bayar = NULL WHERE id = $jurnalId");
+    }
+}
+
 function sinkronkan_relasi_jurnal($jurnalId, array $inputJurnal)
 {
     global $koneksi;
 
+    // Rollback pembayaran lama terlebih dahulu (untuk kasus edit jurnal)
+    rollback_pembayaran_jurnal($jurnalId);
+
+    // Hapus record hutang_piutang yang langsung terhubung ke jurnal ini (jenis Hutang/Piutang)
     $stmtHapus = $koneksi->prepare('DELETE FROM hutang_piutang WHERE jurnal_id = ?');
     $stmtHapus->bind_param('i', $jurnalId);
     $stmtHapus->execute();
     $stmtHapus->close();
 
-    if (in_array($inputJurnal['jenis_transaksi'], ['Hutang', 'Piutang'], true) && $inputJurnal['kontak_id'] > 0 && $inputJurnal['nominal_relasi'] > 0) {
-        $stmtRelasi = $koneksi->prepare('INSERT INTO hutang_piutang (jurnal_id, kontak_id, jenis, tanggal, jatuh_tempo, keterangan, nominal, dibayar, status) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)');
-        $status = 'Belum Lunas';
+    if (in_array($inputJurnal['jenis_transaksi'], ['Hutang', 'Piutang'], true)
+        && $inputJurnal['kontak_id'] > 0
+        && $inputJurnal['nominal_relasi'] > 0
+    ) {
+        // Jurnal pembelian/piutang baru → buat record hutang_piutang
+        $stmtRelasi = $koneksi->prepare(
+            'INSERT INTO hutang_piutang (jurnal_id, kontak_id, jenis, tanggal, jatuh_tempo, keterangan, nominal, dibayar, status) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)'
+        );
+        $status           = 'Belum Lunas';
         $jatuhTempoSimpan = $inputJurnal['jatuh_tempo'] !== '' ? $inputJurnal['jatuh_tempo'] : null;
-        $stmtRelasi->bind_param('iissssds', $jurnalId, $inputJurnal['kontak_id'], $inputJurnal['jenis_transaksi'], $inputJurnal['tanggal'], $jatuhTempoSimpan, $inputJurnal['keterangan'], $inputJurnal['nominal_relasi'], $status);
+        $stmtRelasi->bind_param(
+            'iissssds',
+            $jurnalId,
+            $inputJurnal['kontak_id'],
+            $inputJurnal['jenis_transaksi'],
+            $inputJurnal['tanggal'],
+            $jatuhTempoSimpan,
+            $inputJurnal['keterangan'],
+            $inputJurnal['nominal_relasi'],
+            $status
+        );
 
         if (!$stmtRelasi->execute()) {
             throw new Exception('Gagal menyimpan data hutang/piutang: ' . $stmtRelasi->error);
         }
 
         $stmtRelasi->close();
+
+    } elseif (in_array($inputJurnal['jenis_transaksi'], ['Bayar Hutang', 'Terima Piutang'], true)
+        && $inputJurnal['hutang_piutang_id'] > 0
+        && $inputJurnal['nominal_relasi'] > 0
+    ) {
+        // Jurnal pelunasan → update hutang_piutang yang dipilih
+        $hpId        = $inputJurnal['hutang_piutang_id'];
+        $nominalBayar = $inputJurnal['nominal_relasi'];
+
+        $hp = kueri_satu("SELECT nominal, dibayar FROM hutang_piutang WHERE id = $hpId LIMIT 1");
+        if (!$hp) {
+            throw new Exception('Faktur hutang/piutang yang dipilih tidak ditemukan.');
+        }
+
+        $dibayarBaru = round((float) $hp['dibayar'] + $nominalBayar, 2);
+        if ($dibayarBaru > round((float) $hp['nominal'], 2)) {
+            throw new Exception('Jumlah pembayaran melebihi sisa tagihan faktur.');
+        }
+
+        $status = $dibayarBaru <= 0 ? 'Belum Lunas' : (
+            $dibayarBaru < (float) $hp['nominal'] ? 'Sebagian' : 'Lunas'
+        );
+
+        $stmtUpdate = $koneksi->prepare('UPDATE hutang_piutang SET dibayar = ?, status = ? WHERE id = ?');
+        $stmtUpdate->bind_param('dsi', $dibayarBaru, $status, $hpId);
+        if (!$stmtUpdate->execute()) {
+            throw new Exception('Gagal memperbarui status hutang/piutang: ' . $stmtUpdate->error);
+        }
+        $stmtUpdate->close();
+
+        // Simpan referensi dan nominal pembayaran ke tabel jurnal
+        $stmtJurnal = $koneksi->prepare(
+            'UPDATE jurnal SET hutang_piutang_id = ?, nominal_bayar = ? WHERE id = ?'
+        );
+        $stmtJurnal->bind_param('idi', $hpId, $nominalBayar, $jurnalId);
+        $stmtJurnal->execute();
+        $stmtJurnal->close();
     }
 }
 
@@ -1177,8 +1451,17 @@ function ubah_jurnal($jurnalId, $data)
     $koneksi->begin_transaction();
 
     try {
-        $stmtJurnal = $koneksi->prepare('UPDATE jurnal SET tanggal = ?, nomor_bukti = ?, keterangan = ?, jenis_transaksi = ? WHERE id = ?');
-        $stmtJurnal->bind_param('ssssi', $inputJurnal['tanggal'], $inputJurnal['nomor_bukti'], $inputJurnal['keterangan'], $inputJurnal['jenis_transaksi'], $jurnalId);
+        $stmtJurnal = $koneksi->prepare(
+            'UPDATE jurnal SET tanggal = ?, nomor_bukti = ?, keterangan = ?, jenis_transaksi = ? WHERE id = ?'
+        );
+        $stmtJurnal->bind_param(
+            'ssssi',
+            $inputJurnal['tanggal'],
+            $inputJurnal['nomor_bukti'],
+            $inputJurnal['keterangan'],
+            $inputJurnal['jenis_transaksi'],
+            $jurnalId
+        );
 
         if (!$stmtJurnal->execute()) {
             throw new Exception('Gagal mengubah jurnal: ' . $stmtJurnal->error);
@@ -1216,6 +1499,9 @@ function hapus_jurnal($jurnalId)
     $koneksi->begin_transaction();
 
     try {
+        // Rollback pembayaran jika jurnal ini adalah jurnal pelunasan
+        rollback_pembayaran_jurnal($jurnalId);
+
         $stmtHapusRelasi = $koneksi->prepare('DELETE FROM hutang_piutang WHERE jurnal_id = ?');
         $stmtHapusRelasi->bind_param('i', $jurnalId);
         $stmtHapusRelasi->execute();
@@ -1460,6 +1746,17 @@ function hitung_saldo_akun($akunId, $hinggaTanggal = '')
     $akun = kueri_satu('SELECT * FROM akun WHERE id = ' . $akunId . ' LIMIT 1');
     if (!$akun) {
         return 0;
+    }
+
+    // Jika akun ini adalah akun induk (punya sub-akun aktif),
+    // saldo-nya adalah jumlah saldo seluruh sub-akunnya.
+    $subAkun = kueri_semua('SELECT id FROM akun WHERE parent_id = ' . $akunId . ' AND aktif = 1');
+    if (!empty($subAkun)) {
+        $totalSaldo = 0;
+        foreach ($subAkun as $sub) {
+            $totalSaldo += hitung_saldo_akun((int) $sub['id'], $hinggaTanggal);
+        }
+        return $totalSaldo;
     }
 
     [$tahunBuku, $tanggalMulai, $tanggalSelesai] = ambil_batas_tahun_buku($hinggaTanggal);
@@ -1760,33 +2057,38 @@ function ambil_relasi_hutang_piutang($filter = [])
 {
     global $koneksi;
 
-    $jenis = trim($filter['jenis'] ?? '');
-    $status = trim($filter['status'] ?? '');
+    sinkronisasi_skema_jurnal();
+
+    $jenis    = trim($filter['jenis'] ?? '');
+    $status   = trim($filter['status'] ?? '');
     $kontakId = (int) ($filter['kontak_id'] ?? 0);
 
+    // Sertakan jurnal_bayar_id: ID jurnal yang melunasi faktur ini (jika ada)
     $sql = "SELECT hp.*, k.nama AS nama_kontak, k.jenis AS jenis_kontak, k.kode_kontak,
-                   (hp.nominal - hp.dibayar) AS sisa
+                   (hp.nominal - hp.dibayar) AS sisa,
+                   j_bayar.id AS jurnal_bayar_id
             FROM hutang_piutang hp
             INNER JOIN kontak k ON k.id = hp.kontak_id
+            LEFT JOIN jurnal j_bayar ON j_bayar.hutang_piutang_id = hp.id
             WHERE 1 = 1";
-    $types = '';
+    $types  = '';
     $params = [];
 
     if ($jenis !== '' && in_array($jenis, ['Hutang', 'Piutang'], true)) {
-        $sql .= ' AND hp.jenis = ?';
-        $types .= 's';
+        $sql    .= ' AND hp.jenis = ?';
+        $types  .= 's';
         $params[] = $jenis;
     }
 
     if ($status !== '' && in_array($status, ['Belum Lunas', 'Sebagian', 'Lunas'], true)) {
-        $sql .= ' AND hp.status = ?';
-        $types .= 's';
+        $sql    .= ' AND hp.status = ?';
+        $types  .= 's';
         $params[] = $status;
     }
 
     if ($kontakId > 0) {
-        $sql .= ' AND hp.kontak_id = ?';
-        $types .= 'i';
+        $sql    .= ' AND hp.kontak_id = ?';
+        $types  .= 'i';
         $params[] = $kontakId;
     }
 
@@ -1799,7 +2101,7 @@ function ambil_relasi_hutang_piutang($filter = [])
 
     $stmt->execute();
     $hasil = $stmt->get_result();
-    $data = $hasil ? $hasil->fetch_all(MYSQLI_ASSOC) : [];
+    $data  = $hasil ? $hasil->fetch_all(MYSQLI_ASSOC) : [];
     $stmt->close();
 
     return $data;
