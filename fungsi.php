@@ -6,6 +6,28 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/koneksi.php';
 
+// Flag file untuk menandai bahwa schema migration sudah selesai.
+// Setelah file ini ada, semua DDL (SHOW COLUMNS, ALTER TABLE, CREATE TABLE)
+// tidak akan dieksekusi lagi di setiap request → penghematan besar di server.
+define('SCHEMA_READY_FLAG', __DIR__ . '/.schema_ready');
+
+function schema_sudah_siap(): bool
+{
+    return file_exists(SCHEMA_READY_FLAG);
+}
+
+function tandai_schema_selesai(): void
+{
+    @file_put_contents(SCHEMA_READY_FLAG, date('c'));
+}
+
+function reset_schema_flag(): void
+{
+    if (file_exists(SCHEMA_READY_FLAG)) {
+        @unlink(SCHEMA_READY_FLAG);
+    }
+}
+
 function e($nilai)
 {
     return htmlspecialchars((string) $nilai, ENT_QUOTES, 'UTF-8');
@@ -88,7 +110,8 @@ function sinkronisasi_skema_pengaturan()
     static $sudahDicek = false;
     global $koneksi;
 
-    if ($sudahDicek || !database_terpasang()) {
+    // Lewati jika flag sudah ada atau sudah dicek dalam request ini
+    if ($sudahDicek || schema_sudah_siap() || !database_terpasang()) {
         return;
     }
 
@@ -105,7 +128,7 @@ function sinkronisasi_skema_kontak()
     static $sudahDicek = false;
     global $koneksi;
 
-    if ($sudahDicek || !database_terpasang()) {
+    if ($sudahDicek || schema_sudah_siap() || !database_terpasang()) {
         return;
     }
 
@@ -122,7 +145,7 @@ function sinkronisasi_skema_akun()
     static $sudahDicek = false;
     global $koneksi;
 
-    if ($sudahDicek || !database_terpasang()) {
+    if ($sudahDicek || schema_sudah_siap() || !database_terpasang()) {
         return;
     }
 
@@ -144,7 +167,7 @@ function sinkronisasi_skema_jurnal()
     static $sudahDicek = false;
     global $koneksi;
 
-    if ($sudahDicek || !database_terpasang()) {
+    if ($sudahDicek || schema_sudah_siap() || !database_terpasang()) {
         return;
     }
 
@@ -177,7 +200,7 @@ function sinkronisasi_skema_tahun_buku()
     static $sudahDicek = false;
     global $koneksi;
 
-    if ($sudahDicek || !database_terpasang()) {
+    if ($sudahDicek || schema_sudah_siap() || !database_terpasang()) {
         return;
     }
 
@@ -450,7 +473,8 @@ function sinkronisasi_akun_default()
 {
     static $sudahDicek = false;
 
-    if ($sudahDicek || !database_terpasang()) {
+    // Jika flag schema_ready sudah ada, tidak perlu insert akun default lagi
+    if ($sudahDicek || schema_sudah_siap() || !database_terpasang()) {
         return;
     }
 
@@ -467,11 +491,17 @@ function ambil_pengaturan()
 {
     static $pengaturan = null;
 
-    sinkronisasi_skema_pengaturan();
-    sinkronisasi_skema_tahun_buku();
-    sinkronisasi_skema_akun();
-    sinkronisasi_skema_jurnal();
-    sinkronisasi_akun_default();
+    // Jalankan semua sinkronisasi schema hanya jika flag belum ada.
+    // Setelah flag ada, blok ini jadi no-op (cepat).
+    if (!schema_sudah_siap()) {
+        sinkronisasi_skema_pengaturan();
+        sinkronisasi_skema_tahun_buku();
+        sinkronisasi_skema_akun();
+        sinkronisasi_skema_jurnal();
+        sinkronisasi_akun_default();
+        // Tandai bahwa semua skema dan data default sudah siap
+        tandai_schema_selesai();
+    }
 
     if ($pengaturan !== null) {
         return $pengaturan;
@@ -645,9 +675,7 @@ function render_footer()
 
 function ambil_daftar_akun()
 {
-    sinkronisasi_skema_akun();
-    sinkronisasi_akun_default();
-
+    // Sinkronisasi hanya diperlukan jika schema belum siap (ditangani oleh ambil_pengaturan)
     return kueri_semua(
         "SELECT a.*,
                 p.nama_akun AS nama_induk,
@@ -662,9 +690,6 @@ function ambil_daftar_akun()
 
 function ambil_akun_untuk_jurnal()
 {
-    sinkronisasi_skema_akun();
-    sinkronisasi_akun_default();
-
     // Hanya kembalikan akun leaf (tidak punya sub-akun aktif) agar akun induk
     // tidak bisa dipakai langsung di baris jurnal.
     return kueri_semua(
@@ -700,8 +725,7 @@ function ambil_daftar_kontak($jenis = '')
 {
     global $koneksi;
 
-    sinkronisasi_skema_kontak();
-
+    // sinkronisasi_skema_kontak sudah ditangani oleh ambil_pengaturan()
     if ($jenis === '') {
         return kueri_semua("SELECT * FROM kontak WHERE aktif = 1 ORDER BY nama ASC");
     }
@@ -769,11 +793,17 @@ function ambil_saldo_awal_akun($tahunBukuId)
 {
     global $koneksi;
 
-    sinkronisasi_skema_tahun_buku();
+    // Cache statis: data saldo awal untuk tahun buku yang sama tidak perlu
+    // di-query ulang dalam satu request (mencegah N+1 dari hitung_saldo_akun).
+    static $cache = [];
 
     $tahunBukuId = (int) $tahunBukuId;
     if ($tahunBukuId <= 0) {
         return [];
+    }
+
+    if (isset($cache[$tahunBukuId])) {
+        return $cache[$tahunBukuId];
     }
 
     $stmt = $koneksi->prepare('SELECT akun_id, nominal FROM saldo_awal_akun WHERE tahun_buku_id = ?');
@@ -788,6 +818,7 @@ function ambil_saldo_awal_akun($tahunBukuId)
         $saldoAwal[(int) $item['akun_id']] = (float) $item['nominal'];
     }
 
+    $cache[$tahunBukuId] = $saldoAwal;
     return $saldoAwal;
 }
 
@@ -1748,35 +1779,38 @@ function hitung_saldo_akun($akunId, $hinggaTanggal = '')
         return 0;
     }
 
-    // Jika akun ini adalah akun induk (punya sub-akun aktif),
-    // saldo-nya adalah jumlah saldo seluruh sub-akunnya.
-    $subAkun = kueri_semua('SELECT id FROM akun WHERE parent_id = ' . $akunId . ' AND aktif = 1');
-    if (!empty($subAkun)) {
-        $totalSaldo = 0;
-        foreach ($subAkun as $sub) {
-            $totalSaldo += hitung_saldo_akun((int) $sub['id'], $hinggaTanggal);
-        }
-        return $totalSaldo;
+    // Ambil semua sub-akun aktif beserta tipe saldonya dalam satu query
+    $subAkun = kueri_semua('SELECT id, tipe_saldo FROM akun WHERE parent_id = ' . $akunId . ' AND aktif = 1');
+    
+    $daftarId = [$akunId];
+    $tipeSaldoMap = [$akunId => $akun['tipe_saldo']];
+    foreach ($subAkun as $sub) {
+        $idSub = (int) $sub['id'];
+        $daftarId[] = $idSub;
+        $tipeSaldoMap[$idSub] = $sub['tipe_saldo'];
     }
 
     [$tahunBuku, $tanggalMulai, $tanggalSelesai] = ambil_batas_tahun_buku($hinggaTanggal);
 
-    $saldoAwal = 0;
+    $saldoAwalTotal = 0;
     if ($tahunBuku) {
         $saldoAwalPerAkun = ambil_saldo_awal_akun((int) $tahunBuku['id']);
-        $saldoAwal = (float) ($saldoAwalPerAkun[$akunId] ?? 0);
+        foreach ($daftarId as $id) {
+            $saldoAwalTotal += (float) ($saldoAwalPerAkun[$id] ?? 0);
+        }
     }
 
     if ($tahunBuku && ($tanggalMulai === '' || $tanggalSelesai === '')) {
-        return $saldoAwal;
+        return $saldoAwalTotal;
     }
 
-    $sql = 'SELECT COALESCE(SUM(jd.debit), 0) AS total_debit, COALESCE(SUM(jd.kredit), 0) AS total_kredit
+    $placeholders = implode(',', array_fill(0, count($daftarId), '?'));
+    $sql = 'SELECT jd.akun_id, COALESCE(SUM(jd.debit), 0) AS total_debit, COALESCE(SUM(jd.kredit), 0) AS total_kredit
             FROM jurnal_detail jd
             INNER JOIN jurnal j ON j.id = jd.jurnal_id
-            WHERE jd.akun_id = ?';
-    $types = 'i';
-    $params = [$akunId];
+            WHERE jd.akun_id IN (' . $placeholders . ')';
+    $types = str_repeat('i', count($daftarId));
+    $params = $daftarId;
 
     if ($tahunBuku) {
         $sql .= ' AND j.tanggal >= ? AND j.tanggal <= ?';
@@ -1793,52 +1827,121 @@ function hitung_saldo_akun($akunId, $hinggaTanggal = '')
         }
     }
 
+    $sql .= ' GROUP BY jd.akun_id';
+
     $stmt = $koneksi->prepare($sql);
     $stmt->bind_param($types, ...$params);
-
     $stmt->execute();
     $hasil = $stmt->get_result();
-    $baris = $hasil ? $hasil->fetch_assoc() : ['total_debit' => 0, 'total_kredit' => 0];
+    $mutasiBaris = $hasil ? $hasil->fetch_all(MYSQLI_ASSOC) : [];
     $stmt->close();
 
-    return $saldoAwal + hitung_mutasi_saldo($akun['tipe_saldo'], $baris['total_debit'], $baris['total_kredit']);
+    $totalMutasi = 0;
+    foreach ($mutasiBaris as $mutasi) {
+        $id = (int) $mutasi['akun_id'];
+        $tipeSaldo = $tipeSaldoMap[$id] ?? $akun['tipe_saldo'];
+        $totalMutasi += hitung_mutasi_saldo($tipeSaldo, $mutasi['total_debit'], $mutasi['total_kredit']);
+    }
+
+    return $saldoAwalTotal + $totalMutasi;
 }
 
 function ringkasan_dashboard()
 {
-    $akun = ambil_daftar_akun();
+    global $koneksi;
+
     $ringkasan = [
-        'aset' => 0,
-        'kewajiban' => 0,
-        'ekuitas' => 0,
-        'hutang_berjalan' => 0,
+        'aset'             => 0,
+        'kewajiban'        => 0,
+        'ekuitas'          => 0,
+        'hutang_berjalan'  => 0,
         'piutang_berjalan' => 0,
     ];
 
-    foreach ($akun as $baris) {
-        $saldo = hitung_saldo_akun((int) $baris['id']);
+    // Ambil tahun buku aktif sekali
+    $tahunBuku = ambil_tahun_buku_aktif();
+    $saldoAwal = $tahunBuku ? ambil_saldo_awal_akun((int) $tahunBuku['id']) : [];
 
-        if ($baris['kategori'] === 'Aset') {
+    // -----------------------------------------------------------------------
+    // SEBELUMNYA: loop foreach akun → 80+ query (1 per akun)
+    // SEKARANG  : 1 query agregat JOIN untuk semua akun sekaligus
+    // -----------------------------------------------------------------------
+    $sql = "SELECT
+                a.id,
+                a.kategori,
+                a.tipe_saldo,
+                a.parent_id,
+                COALESCE(SUM(jd.debit), 0)  AS total_debit,
+                COALESCE(SUM(jd.kredit), 0) AS total_kredit
+            FROM akun a
+            LEFT JOIN jurnal_detail jd ON jd.akun_id = a.id
+            LEFT JOIN jurnal j ON j.id = jd.jurnal_id";
+
+    $params = [];
+    $types  = '';
+
+    if ($tahunBuku) {
+        $sql .= " AND j.tanggal >= ? AND j.tanggal <= ?";
+        $types    .= 'ss';
+        $params[]  = $tahunBuku['tanggal_mulai'];
+        $params[]  = $tahunBuku['tanggal_selesai'];
+    }
+
+    $sql .= " WHERE a.aktif = 1
+                AND a.kategori IN ('Aset', 'Kewajiban', 'Ekuitas')
+              GROUP BY a.id, a.kategori, a.tipe_saldo, a.parent_id";
+
+    $stmt = $koneksi->prepare($sql);
+    if ($types !== '') {
+        $stmt->bind_param($types, ...$params);
+    }
+    $stmt->execute();
+    $hasil = $stmt->get_result();
+    $barisAkun = $hasil ? $hasil->fetch_all(MYSQLI_ASSOC) : [];
+    $stmt->close();
+
+    // Hitung saldo per akun (mutasi + saldo awal) dan akumulasi per kategori
+    // Akun induk (parent_id IS NULL yang punya anak) diabaikan dari penjumlahan
+    // karena saldo-nya sudah tercakup di sub-akun.
+    $akunIdDenganAnak = [];
+    foreach ($barisAkun as $b) {
+        if ($b['parent_id'] !== null) {
+            $akunIdDenganAnak[(int) $b['parent_id']] = true;
+        }
+    }
+
+    foreach ($barisAkun as $b) {
+        $id = (int) $b['id'];
+
+        // Lewati akun induk — saldo-nya sudah terhitung via sub-akun
+        if (isset($akunIdDenganAnak[$id])) {
+            continue;
+        }
+
+        $saldoAkunIni = (float) ($saldoAwal[$id] ?? 0);
+        $mutasi       = hitung_mutasi_saldo($b['tipe_saldo'], $b['total_debit'], $b['total_kredit']);
+        $saldo        = $saldoAkunIni + $mutasi;
+
+        if ($b['kategori'] === 'Aset') {
             $ringkasan['aset'] += $saldo;
-        }
-
-        if ($baris['kategori'] === 'Kewajiban') {
+        } elseif ($b['kategori'] === 'Kewajiban') {
             $ringkasan['kewajiban'] += $saldo;
-        }
-
-        if ($baris['kategori'] === 'Ekuitas') {
+        } elseif ($b['kategori'] === 'Ekuitas') {
             $ringkasan['ekuitas'] += $saldo;
         }
     }
 
-    $relasi = kueri_semua("SELECT jenis, nominal, dibayar FROM hutang_piutang");
-    foreach ($relasi as $baris) {
-        $sisa = (float) $baris['nominal'] - (float) $baris['dibayar'];
+    // Hutang & piutang berjalan: 1 query agregat
+    $relasiRows = kueri_semua("SELECT jenis, COALESCE(SUM(nominal - dibayar), 0) AS sisa
+                               FROM hutang_piutang
+                               WHERE status != 'Lunas'
+                               GROUP BY jenis");
+    foreach ($relasiRows as $baris) {
         if ($baris['jenis'] === 'Hutang') {
-            $ringkasan['hutang_berjalan'] += $sisa;
+            $ringkasan['hutang_berjalan'] = (float) $baris['sisa'];
         }
         if ($baris['jenis'] === 'Piutang') {
-            $ringkasan['piutang_berjalan'] += $sisa;
+            $ringkasan['piutang_berjalan'] = (float) $baris['sisa'];
         }
     }
 
@@ -1897,12 +2000,24 @@ function laporan_buku_besar($akunId, $tanggalMulai = '', $tanggalSelesai = '')
         $saldoAwal = hitung_saldo_akun($akunId, $tanggalSebelumnya);
     }
 
-    $sql = 'SELECT j.tanggal, j.nomor_bukti, j.keterangan, jd.debit, jd.kredit
+    // Ambil daftar sub-akun aktif jika ada
+    $subAkun = kueri_semua('SELECT id FROM akun WHERE parent_id = ' . $akunId . ' AND aktif = 1');
+    $isInduk = !empty($subAkun);
+
+    $daftarId = [$akunId];
+    foreach ($subAkun as $sub) {
+        $daftarId[] = (int) $sub['id'];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($daftarId), '?'));
+
+    $sql = 'SELECT j.tanggal, j.nomor_bukti, j.keterangan, jd.debit, jd.kredit, jd.akun_id, a.kode_akun, a.nama_akun
             FROM jurnal_detail jd
             INNER JOIN jurnal j ON j.id = jd.jurnal_id
-            WHERE jd.akun_id = ?';
-    $types = 'i';
-    $params = [$akunId];
+            INNER JOIN akun a ON a.id = jd.akun_id
+            WHERE jd.akun_id IN (' . $placeholders . ')';
+    $types = str_repeat('i', count($daftarId));
+    $params = $daftarId;
 
     if ($tanggalMulai !== '') {
         $sql .= ' AND j.tanggal >= ?';
@@ -1927,8 +2042,12 @@ function laporan_buku_besar($akunId, $tanggalMulai = '', $tanggalSelesai = '')
     $saldoBerjalan = $saldoAwal;
     foreach ($baris as &$item) {
         $saldoBerjalan += hitung_mutasi_saldo($akun['tipe_saldo'], $item['debit'], $item['kredit']);
-
         $item['saldo'] = $saldoBerjalan;
+
+        // Prepend sub-account info if this is a parent ledger view and the transaction is from a sub-account
+        if ($isInduk && (int) $item['akun_id'] !== $akunId) {
+            $item['keterangan'] = '[' . $item['kode_akun'] . ' - ' . $item['nama_akun'] . '] ' . $item['keterangan'];
+        }
     }
     unset($item);
 
@@ -2011,42 +2130,110 @@ function laporan_arus_kas($tanggalMulai = '', $tanggalSelesai = '')
 
 function ringkasan_neraca()
 {
-    $akun = ambil_daftar_akun();
+    global $koneksi;
+
     $hasil = [
-        'Aset' => [],
-        'Kewajiban' => [],
-        'Ekuitas' => [],
-        'total_aset' => 0,
+        'Aset'            => [],
+        'Kewajiban'       => [],
+        'Ekuitas'         => [],
+        'total_aset'      => 0,
         'total_kewajiban' => 0,
-        'total_ekuitas' => 0,
+        'total_ekuitas'   => 0,
     ];
 
-    foreach ($akun as $baris) {
-        if (!in_array($baris['kategori'], ['Aset', 'Kewajiban', 'Ekuitas'], true)) {
+    // Ambil tahun buku aktif sekali
+    $tahunBuku = ambil_tahun_buku_aktif();
+    $saldoAwal = $tahunBuku ? ambil_saldo_awal_akun((int) $tahunBuku['id']) : [];
+
+    // -----------------------------------------------------------------------
+    // SEBELUMNYA: loop foreach akun → 80+ query (1 per akun)
+    // SEKARANG  : 1 query agregat JOIN untuk semua akun sekaligus
+    // -----------------------------------------------------------------------
+    $sql = "SELECT
+                a.id,
+                a.kode_akun,
+                a.nama_akun,
+                a.kategori,
+                a.tipe_saldo,
+                a.parent_id,
+                COALESCE(SUM(jd.debit), 0)  AS total_debit,
+                COALESCE(SUM(jd.kredit), 0) AS total_kredit
+            FROM akun a
+            LEFT JOIN jurnal_detail jd ON jd.akun_id = a.id
+            LEFT JOIN jurnal j ON j.id = jd.jurnal_id";
+
+    $params = [];
+    $types  = '';
+
+    if ($tahunBuku) {
+        $sql .= " AND j.tanggal >= ? AND j.tanggal <= ?";
+        $types    .= 'ss';
+        $params[]  = $tahunBuku['tanggal_mulai'];
+        $params[]  = $tahunBuku['tanggal_selesai'];
+    }
+
+    $sql .= " WHERE a.aktif = 1
+                AND a.kategori IN ('Aset', 'Kewajiban', 'Ekuitas')
+              GROUP BY a.id, a.kode_akun, a.nama_akun, a.kategori, a.tipe_saldo, a.parent_id
+              ORDER BY a.kode_akun ASC";
+
+    $stmt = $koneksi->prepare($sql);
+    if ($types !== '') {
+        $stmt->bind_param($types, ...$params);
+    }
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $barisAkun = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+    $stmt->close();
+
+    // Mapping akun by id
+    $akunMap = [];
+    foreach ($barisAkun as $b) {
+        $id = (int) $b['id'];
+        $saldoAkunIni = (float) ($saldoAwal[$id] ?? 0);
+        $mutasi       = hitung_mutasi_saldo($b['tipe_saldo'], $b['total_debit'], $b['total_kredit']);
+        $saldo        = $saldoAkunIni + $mutasi;
+        
+        $b['saldo_sendiri'] = $saldo;
+        $b['saldo_total']   = $saldo;
+        $akunMap[$id]       = $b;
+    }
+
+    // Roll up (akumulasi) saldo ke akun induk (parent)
+    foreach ($akunMap as $id => $akun) {
+        $saldo = $akun['saldo_sendiri'];
+        if ($saldo == 0) {
             continue;
         }
-
-        $saldo = hitung_saldo_akun((int) $baris['id']);
-        if (abs($saldo) < 0.005) {
-            continue;
+        
+        $parentId = $akun['parent_id'];
+        while ($parentId !== null && isset($akunMap[(int)$parentId])) {
+            $akunMap[(int)$parentId]['saldo_total'] += $saldo;
+            $parentId = $akunMap[(int)$parentId]['parent_id'];
         }
+    }
 
-        $hasil[$baris['kategori']][] = [
-            'kode_akun' => $baris['kode_akun'],
-            'nama_akun' => $baris['nama_akun'],
-            'saldo' => $saldo,
-        ];
+    // Ambil hanya akun tingkat atas (Akun Utama / parent_id IS NULL)
+    foreach ($akunMap as $id => $akun) {
+        if ($akun['parent_id'] === null) {
+            $saldoTotal = $akun['saldo_total'];
+            if (abs($saldoTotal) < 0.005) {
+                continue;
+            }
 
-        if ($baris['kategori'] === 'Aset') {
-            $hasil['total_aset'] += $saldo;
-        }
+            $hasil[$akun['kategori']][] = [
+                'kode_akun' => $akun['kode_akun'],
+                'nama_akun' => $akun['nama_akun'],
+                'saldo'     => $saldoTotal,
+            ];
 
-        if ($baris['kategori'] === 'Kewajiban') {
-            $hasil['total_kewajiban'] += $saldo;
-        }
-
-        if ($baris['kategori'] === 'Ekuitas') {
-            $hasil['total_ekuitas'] += $saldo;
+            if ($akun['kategori'] === 'Aset') {
+                $hasil['total_aset'] += $saldoTotal;
+            } elseif ($akun['kategori'] === 'Kewajiban') {
+                $hasil['total_kewajiban'] += $saldoTotal;
+            } elseif ($akun['kategori'] === 'Ekuitas') {
+                $hasil['total_ekuitas'] += $saldoTotal;
+            }
         }
     }
 
