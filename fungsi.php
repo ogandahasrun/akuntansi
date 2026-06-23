@@ -452,6 +452,9 @@ function migrasi_akun_legacy_ke_template_rumah_sakit()
 
 function terapkan_template_akun_rumah_sakit($perbaruiYangSudahAda = false)
 {
+    // Fitur impor template dinonaktifkan agar tidak mengacaukan daftar akun yang sudah dirapikan.
+    return;
+
     global $koneksi;
 
     if (!database_terpasang()) {
@@ -531,7 +534,7 @@ function sinkronisasi_akun_default()
         return;
     }
 
-    terapkan_template_akun_rumah_sakit(false);
+    // terapkan_template_akun_rumah_sakit(false); // Dinonaktifkan
     $sudahDicek = true;
 }
 

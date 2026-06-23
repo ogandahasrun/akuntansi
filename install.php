@@ -29,9 +29,11 @@ function proses_instalasi_database()
         throw new Exception($koneksi->error);
     }
 
+    /*
     if (function_exists('terapkan_template_akun_rumah_sakit')) {
         terapkan_template_akun_rumah_sakit(true);
     }
+    */
 }
 
 if (PHP_SAPI === 'cli') {
