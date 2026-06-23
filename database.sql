@@ -237,3 +237,17 @@ CREATE TABLE IF NOT EXISTS hutang_piutang (
     CONSTRAINT fk_hutang_piutang_jurnal FOREIGN KEY (jurnal_id) REFERENCES jurnal(id) ON DELETE SET NULL,
     CONSTRAINT fk_hutang_piutang_kontak FOREIGN KEY (kontak_id) REFERENCES kontak(id)
 );
+
+CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    nama_lengkap VARCHAR(100) NOT NULL,
+    role ENUM('admin', 'akuntan', 'pimpinan') NOT NULL DEFAULT 'akuntan',
+    aktif TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO users (username, password, nama_lengkap, role, aktif)
+VALUES ('admin', '$2y$10$K874CWBXketWi9Phwwyafe0HoU82HLo5hegEobuUC.jBmcpuGE6X.', 'Administrator', 'admin', 1)
+ON DUPLICATE KEY UPDATE id = id;

@@ -459,3 +459,160 @@ button.primary {
         align-items: flex-start;
     }
 }
+
+/* --- LOGIN PAGE STYLES --- */
+.login-body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: 
+        radial-gradient(circle at top right, rgba(17, 100, 102, 0.15), transparent 40%),
+        radial-gradient(circle at bottom left, rgba(201, 92, 55, 0.15), transparent 40%),
+        linear-gradient(135deg, #f7f1e7 0%, #efe5d2 100%);
+}
+
+.login-wrapper {
+    width: 100%;
+    max-width: 420px;
+    padding: 20px;
+}
+
+.login-card {
+    background: rgba(255, 250, 242, 0.9);
+    border: 1px solid rgba(222, 207, 183, 0.9);
+    border-radius: 28px;
+    box-shadow: 0 20px 40px rgba(67, 44, 18, 0.12);
+    backdrop-filter: blur(10px);
+    padding: 36px;
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 28px;
+}
+
+.login-logo {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 16px;
+    padding: 10px;
+    background: rgba(17, 100, 102, 0.08);
+    border: 1px solid rgba(17, 100, 102, 0.16);
+    border-radius: 20px;
+}
+
+.login-default-logo {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 16px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 2.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 20px;
+    box-shadow: 0 8px 16px rgba(17, 100, 102, 0.2);
+}
+
+.login-header h2 {
+    margin: 0 0 6px;
+    font-size: 1.6rem;
+    color: var(--primary);
+}
+
+.login-form .form-group {
+    margin-bottom: 20px;
+    display: grid;
+    gap: 8px;
+}
+
+.login-form label {
+    font-weight: bold;
+    font-size: 0.9rem;
+    color: var(--text);
+}
+
+.login-btn {
+    width: 100%;
+    margin-top: 10px;
+    padding: 14px;
+    font-weight: bold;
+    font-size: 1rem;
+    box-shadow: 0 8px 20px rgba(17, 100, 102, 0.25);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 24px rgba(17, 100, 102, 0.35);
+}
+
+.login-btn:active {
+    transform: translateY(0);
+}
+
+/* --- SIDEBAR USER PROFILE BOX --- */
+.user-profile-box {
+    margin-top: auto;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.user-avatar {
+    width: 40px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+.user-name {
+    font-weight: bold;
+    font-size: 0.9rem;
+    color: rgba(255, 248, 239, 0.95);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.user-role {
+    font-size: 0.76rem;
+    color: rgba(255, 248, 239, 0.6);
+}
+
+.button-logout {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.button-logout:hover {
+    background: rgba(201, 92, 55, 0.25);
+    border-color: rgba(201, 92, 55, 0.4);
+    transform: scale(1.05);
+}

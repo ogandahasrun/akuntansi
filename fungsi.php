@@ -11,6 +11,15 @@ require_once __DIR__ . '/koneksi.php';
 // tidak akan dieksekusi lagi di setiap request → penghematan besar di server.
 define('SCHEMA_READY_FLAG', __DIR__ . '/.schema_ready');
 
+// Self-healing: jika flag schema_ready ada tetapi tabel users belum ada (update aplikasi),
+// hapus flag agar migrasi dijalankan ulang.
+if (file_exists(SCHEMA_READY_FLAG)) {
+    $cekTabel = $koneksi->query("SHOW TABLES LIKE 'users'");
+    if (!$cekTabel || $cekTabel->num_rows === 0) {
+        @unlink(SCHEMA_READY_FLAG);
+    }
+}
+
 function schema_sudah_siap(): bool
 {
     return file_exists(SCHEMA_READY_FLAG);
@@ -469,6 +478,50 @@ function terapkan_template_akun_rumah_sakit($perbaruiYangSudahAda = false)
     $stmt->close();
 }
 
+function sinkronisasi_skema_users()
+{
+    static $sudahDicek = false;
+    global $koneksi;
+
+    if ($sudahDicek || schema_sudah_siap() || !database_terpasang()) {
+        return;
+    }
+
+    $koneksi->query(
+        "CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(50) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            nama_lengkap VARCHAR(100) NOT NULL,
+            role ENUM('admin', 'akuntan', 'pimpinan') NOT NULL DEFAULT 'akuntan',
+            aktif TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"
+    );
+
+    // Cek apakah tabel users ada (agar tidak fatal error jika CREATE TABLE gagal karena hak akses)
+    $cekTabel = $koneksi->query("SHOW TABLES LIKE 'users'");
+    if ($cekTabel && $cekTabel->num_rows > 0) {
+        $dataUser = kueri_satu('SELECT COUNT(*) AS total FROM users');
+        $totalUser = (int) ($dataUser['total'] ?? 0);
+        if ($totalUser === 0) {
+            $username = 'admin';
+            $passwordHash = '$2y$10$K874CWBXketWi9Phwwyafe0HoU82HLo5hegEobuUC.jBmcpuGE6X.';
+            $namaLengkap = 'Administrator';
+            $role = 'admin';
+
+            $stmt = $koneksi->prepare('INSERT INTO users (username, password, nama_lengkap, role, aktif) VALUES (?, ?, ?, ?, 1)');
+            if ($stmt) {
+                $stmt->bind_param('ssss', $username, $passwordHash, $namaLengkap, $role);
+                $stmt->execute();
+                $stmt->close();
+            }
+        }
+    }
+
+    $sudahDicek = true;
+}
+
 function sinkronisasi_akun_default()
 {
     static $sudahDicek = false;
@@ -487,6 +540,22 @@ if (basename($_SERVER['PHP_SELF']) !== 'install.php' && !database_terpasang()) {
     exit;
 }
 
+if (PHP_SAPI !== 'cli') {
+    $halamanSekarang = basename($_SERVER['PHP_SELF']);
+    $halamanBebasAkses = ['login.php', 'install.php', 'reset_admin.php'];
+    if (!in_array($halamanSekarang, $halamanBebasAkses, true)) {
+        // Cek apakah tabel users sudah ada. Jika belum ada, jangan kunci halaman demi kelancaran setup.
+        global $koneksi;
+        $cekTabel = $koneksi->query("SHOW TABLES LIKE 'users'");
+        if ($cekTabel && $cekTabel->num_rows > 0) {
+            if (!isset($_SESSION['user_id'])) {
+                header('Location: login.php');
+                exit;
+            }
+        }
+    }
+}
+
 function ambil_pengaturan()
 {
     static $pengaturan = null;
@@ -498,6 +567,7 @@ function ambil_pengaturan()
         sinkronisasi_skema_tahun_buku();
         sinkronisasi_skema_akun();
         sinkronisasi_skema_jurnal();
+        sinkronisasi_skema_users();
         sinkronisasi_akun_default();
         // Tandai bahwa semua skema dan data default sudah siap
         tandai_schema_selesai();
@@ -607,8 +677,14 @@ function render_header($judul, $halamanAktif = '')
         'hutang_piutang' => ['label' => 'Hutang & Piutang', 'url' => 'hutang_piutang.php'],
         'arus_kas' => ['label' => 'Arus Kas', 'url' => 'arus_kas.php'],
         'neraca' => ['label' => 'Neraca', 'url' => 'neraca.php'],
-        'pengaturan' => ['label' => 'Pengaturan', 'url' => 'pengaturan.php'],
+        'tahun_buku' => ['label' => 'Tahun Buku', 'url' => 'tahun_buku.php'],
     ];
+
+    if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
+        $menu['pengguna'] = ['label' => 'Kelola Pengguna', 'url' => 'pengguna.php'];
+    }
+
+    $menu['pengaturan'] = ['label' => 'Pengaturan', 'url' => 'pengaturan.php'];
     ?>
     <!doctype html>
     <html lang="id">
@@ -636,6 +712,16 @@ function render_header($judul, $halamanAktif = '')
                     <a href="<?php echo e($item['url']); ?>" class="<?php echo $halamanAktif === $kunci ? 'aktif' : ''; ?>"><?php echo e($item['label']); ?></a>
                 <?php } ?>
             </nav>
+            <?php if (isset($_SESSION['nama_lengkap'])) { ?>
+                <div class="user-profile-box">
+                    <div class="user-avatar">👤</div>
+                    <div class="user-details">
+                        <span class="user-name"><?php echo e($_SESSION['nama_lengkap']); ?></span>
+                        <span class="user-role"><?php echo e(ucfirst($_SESSION['role'])); ?></span>
+                    </div>
+                    <a href="logout.php" class="button-logout" title="Keluar">🚪</a>
+                </div>
+            <?php } ?>
         </aside>
         <main class="main-content">
             <header class="page-header">
@@ -2292,4 +2378,111 @@ function ambil_relasi_hutang_piutang($filter = [])
     $stmt->close();
 
     return $data;
+}
+
+function ambil_daftar_pengguna()
+{
+    return kueri_semua("SELECT id, username, nama_lengkap, role, aktif FROM users ORDER BY username ASC");
+}
+
+function tambah_pengguna($data)
+{
+    global $koneksi;
+
+    $username = trim($data['username'] ?? '');
+    $namaLengkap = trim($data['nama_lengkap'] ?? '');
+    $password = $data['password'] ?? '';
+    $role = $data['role'] ?? 'akuntan';
+
+    if ($username === '' || $namaLengkap === '' || $password === '') {
+        throw new Exception('Semua kolom harus diisi.');
+    }
+
+    if (strlen($password) < 6) {
+        throw new Exception('Password minimal harus 6 karakter.');
+    }
+
+    if (!in_array($role, ['admin', 'akuntan', 'pimpinan'], true)) {
+        throw new Exception('Role tidak valid.');
+    }
+
+    // Cek apakah username sudah ada
+    $cek = kueri_satu("SELECT id FROM users WHERE username = '" . $koneksi->real_escape_string($username) . "' LIMIT 1");
+    if ($cek) {
+        throw new Exception('Username sudah digunakan.');
+    }
+
+    $passwordHash = password_hash($password, PASSWORD_BCRYPT);
+    $stmt = $koneksi->prepare("INSERT INTO users (username, password, nama_lengkap, role, aktif) VALUES (?, ?, ?, ?, 1)");
+    if (!$stmt) {
+        throw new Exception('Gagal menyiapkan query database.');
+    }
+
+    $stmt->bind_param('ssss', $username, $passwordHash, $namaLengkap, $role);
+    $sukses = $stmt->execute();
+    $stmt->close();
+
+    if (!$sukses) {
+        throw new Exception('Gagal menyimpan pengguna baru.');
+    }
+}
+
+function toggle_status_pengguna($id)
+{
+    global $koneksi;
+    $id = (int) $id;
+
+    if ($id === (int) $_SESSION['user_id']) {
+        throw new Exception('Anda tidak dapat menonaktifkan akun Anda sendiri.');
+    }
+
+    $user = kueri_satu("SELECT aktif FROM users WHERE id = {$id} LIMIT 1");
+    if (!$user) {
+        throw new Exception('Pengguna tidak ditemukan.');
+    }
+
+    $statusBaru = (int) $user['aktif'] === 1 ? 0 : 1;
+    $koneksi->query("UPDATE users SET aktif = {$statusBaru} WHERE id = {$id}");
+}
+
+function ubah_password_sendiri($passwordLama, $passwordBaru, $konfirmasi)
+{
+    global $koneksi;
+    $userId = (int) $_SESSION['user_id'];
+
+    if ($passwordLama === '' || $passwordBaru === '' || $konfirmasi === '') {
+        throw new Exception('Semua kolom password harus diisi.');
+    }
+
+    if ($passwordBaru !== $konfirmasi) {
+        throw new Exception('Konfirmasi password baru tidak cocok.');
+    }
+
+    if (strlen($passwordBaru) < 6) {
+        throw new Exception('Password baru minimal harus 6 karakter.');
+    }
+
+    // Ambil password lama dari DB
+    $user = kueri_satu("SELECT password FROM users WHERE id = {$userId} LIMIT 1");
+    if (!$user) {
+        throw new Exception('Pengguna tidak ditemukan.');
+    }
+
+    if (!password_verify($passwordLama, $user['password'])) {
+        throw new Exception('Password saat ini salah.');
+    }
+
+    $passwordHash = password_hash($passwordBaru, PASSWORD_BCRYPT);
+    $stmt = $koneksi->prepare("UPDATE users SET password = ? WHERE id = ?");
+    if (!$stmt) {
+        throw new Exception('Gagal menyiapkan query database.');
+    }
+
+    $stmt->bind_param('si', $passwordHash, $userId);
+    $sukses = $stmt->execute();
+    $stmt->close();
+
+    if (!$sukses) {
+        throw new Exception('Gagal mengganti password.');
+    }
 }
