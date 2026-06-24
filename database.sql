@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS jurnal (
     tanggal DATE NOT NULL,
     nomor_bukti VARCHAR(50) NOT NULL,
     keterangan TEXT NULL,
-    jenis_transaksi ENUM('Umum', 'Kas', 'Hutang', 'Piutang') NOT NULL DEFAULT 'Umum',
+    jenis_transaksi ENUM('Umum', 'Kas', 'Hutang', 'Piutang', 'Bayar Hutang', 'Terima Piutang', 'Penyesuaian') NOT NULL DEFAULT 'Umum',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -47,7 +47,7 @@ if ($metodeRequest === 'POST' && ($_POST['aksi'] ?? '') === 'hapus_jurnal') {
 
 $akun = ambil_akun_untuk_jurnal(); // Hanya akun leaf (tanpa sub-akun) yang boleh dipakai di jurnal
 $kontak = ambil_daftar_kontak();
-$jurnalTerbaru = ambil_jurnal_terbaru(15);
+$jurnalTerbaru = ambil_jurnal_terbaru(15, true);
 $jurnalEditId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
 $jurnalEdit = $jurnalEditId > 0 ? ambil_jurnal_by_id($jurnalEditId) : null;
 

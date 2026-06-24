@@ -180,9 +180,9 @@ function sinkronisasi_skema_jurnal()
         return;
     }
 
-    // Perluas ENUM jenis_transaksi dengan nilai Bayar Hutang dan Terima Piutang
+    // Perluas ENUM jenis_transaksi dengan nilai Bayar Hutang, Terima Piutang, dan Penyesuaian
     $koneksi->query(
-        "ALTER TABLE jurnal MODIFY jenis_transaksi ENUM('Umum','Kas','Hutang','Piutang','Bayar Hutang','Terima Piutang') NOT NULL DEFAULT 'Umum'"
+        "ALTER TABLE jurnal MODIFY jenis_transaksi ENUM('Umum','Kas','Hutang','Piutang','Bayar Hutang','Terima Piutang','Penyesuaian') NOT NULL DEFAULT 'Umum'"
     );
 
     // Tambah kolom hutang_piutang_id jika belum ada
@@ -676,10 +676,14 @@ function render_header($judul, $halamanAktif = '')
         'dashboard' => ['label' => 'Dashboard', 'url' => 'index.php'],
         'akun' => ['label' => 'Daftar Akun', 'url' => 'akun.php'],
         'jurnal' => ['label' => 'Jurnal Umum', 'url' => 'jurnal_umum.php'],
+        'jurnal_penyesuaian' => ['label' => 'Jurnal Penyesuaian', 'url' => 'jurnal_penyesuaian.php'],
         'buku_besar' => ['label' => 'Buku Besar', 'url' => 'buku_besar.php'],
-        'hutang_piutang' => ['label' => 'Hutang & Piutang', 'url' => 'hutang_piutang.php'],
+        'hutang' => ['label' => 'Hutang', 'url' => 'hutang.php'],
+        'piutang' => ['label' => 'Piutang', 'url' => 'piutang.php'],
         'arus_kas' => ['label' => 'Arus Kas', 'url' => 'arus_kas.php'],
         'neraca' => ['label' => 'Neraca', 'url' => 'neraca.php'],
+        'rugi_laba' => ['label' => 'Rugi Laba', 'url' => 'rugi_laba.php'],
+        'perubahan_ekuitas' => ['label' => 'Perubahan Ekuitas', 'url' => 'perubahan_ekuitas.php'],
         'tahun_buku' => ['label' => 'Tahun Buku', 'url' => 'tahun_buku.php'],
     ];
 
@@ -1957,6 +1961,7 @@ function ringkasan_dashboard()
     // -----------------------------------------------------------------------
     $sql = "SELECT
                 a.id,
+                a.kode_akun,
                 a.kategori,
                 a.tipe_saldo,
                 a.parent_id,
@@ -1978,7 +1983,7 @@ function ringkasan_dashboard()
 
     $sql .= " WHERE a.aktif = 1
                 AND a.kategori IN ('Aset', 'Kewajiban', 'Ekuitas')
-              GROUP BY a.id, a.kategori, a.tipe_saldo, a.parent_id";
+              GROUP BY a.id, a.kode_akun, a.kategori, a.tipe_saldo, a.parent_id";
 
     $stmt = $koneksi->prepare($sql);
     if ($types !== '') {
@@ -1999,6 +2004,9 @@ function ringkasan_dashboard()
         }
     }
 
+    $labaRugi = hitung_laba_rugi_bersih($tahunBuku ? $tahunBuku['tanggal_mulai'] : '', $tahunBuku ? $tahunBuku['tanggal_selesai'] : '');
+    $labaBersih = $labaRugi['laba_bersih'];
+
     foreach ($barisAkun as $b) {
         $id = (int) $b['id'];
 
@@ -2007,9 +2015,13 @@ function ringkasan_dashboard()
             continue;
         }
 
-        $saldoAkunIni = (float) ($saldoAwal[$id] ?? 0);
-        $mutasi       = hitung_mutasi_saldo($b['tipe_saldo'], $b['total_debit'], $b['total_kredit']);
-        $saldo        = $saldoAkunIni + $mutasi;
+        if ($b['kode_akun'] === '3-9000') {
+            $saldo = $labaBersih;
+        } else {
+            $saldoAkunIni = (float) ($saldoAwal[$id] ?? 0);
+            $mutasi       = hitung_mutasi_saldo($b['tipe_saldo'], $b['total_debit'], $b['total_kredit']);
+            $saldo        = $saldoAkunIni + $mutasi;
+        }
 
         if ($b['kategori'] === 'Aset') {
             $ringkasan['aset'] += $saldo;
@@ -2037,21 +2049,29 @@ function ringkasan_dashboard()
     return $ringkasan;
 }
 
-function ambil_jurnal_terbaru($batas = 10)
+function ambil_jurnal_terbaru($batas = 10, $excludePenyesuaian = false)
 {
     $batas = (int) $batas;
 
     $tahunBuku = ambil_tahun_buku_aktif();
-    $filterPeriode = '';
+    $conds = [];
     if ($tahunBuku) {
-        $filterPeriode = " WHERE j.tanggal >= '" . addslashes($tahunBuku['tanggal_mulai']) . "' AND j.tanggal <= '" . addslashes($tahunBuku['tanggal_selesai']) . "'";
+        $conds[] = "j.tanggal >= '" . addslashes($tahunBuku['tanggal_mulai']) . "' AND j.tanggal <= '" . addslashes($tahunBuku['tanggal_selesai']) . "'";
+    }
+    if ($excludePenyesuaian) {
+        $conds[] = "j.jenis_transaksi != 'Penyesuaian'";
+    }
+
+    $where = '';
+    if (!empty($conds)) {
+        $where = " WHERE " . implode(" AND ", $conds);
     }
 
     return kueri_semua(
         'SELECT j.*, COALESCE(SUM(jd.debit), 0) AS total_nominal
          FROM jurnal j
          LEFT JOIN jurnal_detail jd ON jd.jurnal_id = j.id
-         ' . $filterPeriode . '
+         ' . $where . '
          GROUP BY j.id
          ORDER BY j.tanggal DESC, j.id DESC
          LIMIT ' . $batas
@@ -2276,12 +2296,19 @@ function ringkasan_neraca()
     $stmt->close();
 
     // Mapping akun by id
+    $labaRugi = hitung_laba_rugi_bersih($tahunBuku ? $tahunBuku['tanggal_mulai'] : '', $tahunBuku ? $tahunBuku['tanggal_selesai'] : '');
+    $labaBersih = $labaRugi['laba_bersih'];
+
     $akunMap = [];
     foreach ($barisAkun as $b) {
         $id = (int) $b['id'];
-        $saldoAkunIni = (float) ($saldoAwal[$id] ?? 0);
-        $mutasi       = hitung_mutasi_saldo($b['tipe_saldo'], $b['total_debit'], $b['total_kredit']);
-        $saldo        = $saldoAkunIni + $mutasi;
+        if ($b['kode_akun'] === '3-9000') {
+            $saldo = $labaBersih;
+        } else {
+            $saldoAkunIni = (float) ($saldoAwal[$id] ?? 0);
+            $mutasi       = hitung_mutasi_saldo($b['tipe_saldo'], $b['total_debit'], $b['total_kredit']);
+            $saldo        = $saldoAkunIni + $mutasi;
+        }
         
         $b['saldo_sendiri'] = $saldo;
         $b['saldo_total']   = $saldo;
@@ -2488,4 +2515,260 @@ function ubah_password_sendiri($passwordLama, $passwordBaru, $konfirmasi)
     if (!$sukses) {
         throw new Exception('Gagal mengganti password.');
     }
+}
+
+function hitung_laba_rugi_bersih($tanggalMulai = '', $tanggalSelesai = '')
+{
+    global $koneksi;
+
+    $tahunBuku = ambil_tahun_buku_aktif();
+    if ($tahunBuku) {
+        if ($tanggalMulai === '' || $tanggalMulai < $tahunBuku['tanggal_mulai']) {
+            $tanggalMulai = $tahunBuku['tanggal_mulai'];
+        }
+        if ($tanggalSelesai === '' || $tanggalSelesai > $tahunBuku['tanggal_selesai']) {
+            $tanggalSelesai = $tahunBuku['tanggal_selesai'];
+        }
+    }
+
+    $sql = "SELECT a.id, a.kode_akun, a.nama_akun, a.kategori, a.tipe_saldo, a.parent_id,
+                   COALESCE(SUM(jd.debit), 0) AS total_debit,
+                   COALESCE(SUM(jd.kredit), 0) AS total_kredit
+            FROM akun a
+            LEFT JOIN jurnal_detail jd ON jd.akun_id = a.id
+            LEFT JOIN jurnal j ON j.id = jd.jurnal_id";
+
+    $params = [];
+    $types  = '';
+
+    if ($tahunBuku) {
+        $sql .= " AND j.tanggal >= ? AND j.tanggal <= ?";
+        $types    .= 'ss';
+        $params[]  = $tanggalMulai;
+        $params[]  = $tanggalSelesai;
+    }
+
+    $sql .= " WHERE a.aktif = 1 AND a.kategori IN ('Pendapatan', 'Beban')
+              GROUP BY a.id, a.kode_akun, a.nama_akun, a.kategori, a.tipe_saldo, a.parent_id
+              ORDER BY a.kode_akun ASC";
+
+    $stmt = $koneksi->prepare($sql);
+    if ($types !== '') {
+        $stmt->bind_param($types, ...$params);
+    }
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $barisAkun = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+    $stmt->close();
+
+    $tahunBukuId = $tahunBuku ? (int)$tahunBuku['id'] : 0;
+    $saldoAwal = $tahunBukuId > 0 ? ambil_saldo_awal_akun($tahunBukuId) : [];
+
+    // Map and roll up
+    $akunMap = [];
+    foreach ($barisAkun as $b) {
+        $id = (int) $b['id'];
+        $saldoAkunIni = (float) ($saldoAwal[$id] ?? 0);
+        $mutasi       = hitung_mutasi_saldo($b['tipe_saldo'], $b['total_debit'], $b['total_kredit']);
+        $saldo        = $saldoAkunIni + $mutasi;
+
+        $b['saldo_sendiri'] = $saldo;
+        $b['saldo_total']   = $saldo;
+        $akunMap[$id]       = $b;
+    }
+
+    // Roll up (accumulate) to parents
+    foreach ($akunMap as $id => $akun) {
+        $saldo = $akun['saldo_sendiri'];
+        if ($saldo == 0) {
+            continue;
+        }
+
+        $parentId = $akun['parent_id'];
+        while ($parentId !== null && isset($akunMap[(int)$parentId])) {
+            $akunMap[(int)$parentId]['saldo_total'] += $saldo;
+            $parentId = $akunMap[(int)$parentId]['parent_id'];
+        }
+    }
+
+    $totalPendapatan = 0;
+    $totalBeban = 0;
+    $detailPendapatan = [];
+    $detailBeban = [];
+
+    // Filter main categories (parent_id IS NULL)
+    foreach ($akunMap as $id => $akun) {
+        if ($akun['parent_id'] === null) {
+            $saldoTotal = $akun['saldo_total'];
+            if (abs($saldoTotal) < 0.005) {
+                continue;
+            }
+
+            $item = [
+                'id' => $akun['id'],
+                'kode_akun' => $akun['kode_akun'],
+                'nama_akun' => $akun['nama_akun'],
+                'saldo' => $saldoTotal
+            ];
+
+            if ($akun['kategori'] === 'Pendapatan') {
+                $totalPendapatan += $saldoTotal;
+                $detailPendapatan[] = $item;
+            } else {
+                $totalBeban += $saldoTotal;
+                $detailBeban[] = $item;
+            }
+        }
+    }
+
+    return [
+        'total_pendapatan' => $totalPendapatan,
+        'total_beban' => $totalBeban,
+        'laba_bersih' => $totalPendapatan - $totalBeban,
+        'detail_pendapatan' => $detailPendapatan,
+        'detail_beban' => $detailBeban
+    ];
+}
+
+function hitung_mutasi_jurnal_akun($akunId, $tipeSaldo, $tglMulai, $tglSelesai)
+{
+    global $koneksi;
+
+    $akunId = (int) $akunId;
+    $subAkun = kueri_semua('SELECT id, tipe_saldo FROM akun WHERE parent_id = ' . $akunId . ' AND aktif = 1');
+    $daftarId = [$akunId];
+    foreach ($subAkun as $sub) {
+        $daftarId[] = (int) $sub['id'];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($daftarId), '?'));
+    $sql = 'SELECT COALESCE(SUM(jd.debit), 0) AS total_debit, COALESCE(SUM(jd.kredit), 0) AS total_kredit
+            FROM jurnal_detail jd
+            INNER JOIN jurnal j ON j.id = jd.jurnal_id
+            WHERE jd.akun_id IN (' . $placeholders . ')
+              AND j.tanggal >= ? AND j.tanggal <= ?';
+
+    $types = str_repeat('i', count($daftarId)) . 'ss';
+    $params = array_merge($daftarId, [$tglMulai, $tglSelesai]);
+
+    $stmt = $koneksi->prepare($sql);
+    if (!$stmt) {
+        return 0.0;
+    }
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+
+    if (!$row) {
+        return 0.0;
+    }
+
+    return hitung_mutasi_saldo($tipeSaldo, $row['total_debit'], $row['total_kredit']);
+}
+
+function laporan_perubahan_ekuitas($tanggalMulai = '', $tanggalSelesai = '')
+{
+    global $koneksi;
+
+    $tahunBuku = ambil_tahun_buku_aktif();
+    if ($tahunBuku) {
+        if ($tanggalMulai === '' || $tanggalMulai < $tahunBuku['tanggal_mulai']) {
+            $tanggalMulai = $tahunBuku['tanggal_mulai'];
+        }
+        if ($tanggalSelesai === '' || $tanggalSelesai > $tahunBuku['tanggal_selesai']) {
+            $tanggalSelesai = $tahunBuku['tanggal_selesai'];
+        }
+    }
+
+    $saldoAwalTahun = $tahunBuku ? ambil_saldo_awal_akun((int) $tahunBuku['id']) : [];
+
+    $sql = "SELECT a.id, a.kode_akun, a.nama_akun, a.tipe_saldo, a.parent_id
+            FROM akun a
+            WHERE a.aktif = 1 AND a.kategori = 'Ekuitas'
+            ORDER BY a.kode_akun ASC";
+    $akunEkuitas = kueri_semua($sql);
+
+    $labaRugi = hitung_laba_rugi_bersih($tanggalMulai, $tanggalSelesai);
+    $labaBersih = $labaRugi['laba_bersih'];
+
+    $hasil = [];
+    $totalAwal = 0;
+    $totalMutasi = 0;
+    $totalLaba = 0;
+    $totalAkhir = 0;
+
+    foreach ($akunEkuitas as $akun) {
+        $id = (int) $akun['id'];
+        
+        $saldoAwalPeriode = (float) ($saldoAwalTahun[$id] ?? 0);
+        if ($tahunBuku && $tanggalMulai > $tahunBuku['tanggal_mulai']) {
+            $tanggalSebelumnya = date('Y-m-d', strtotime($tanggalMulai . ' -1 day'));
+            $mutasiSebelumnya = hitung_mutasi_jurnal_akun($id, $akun['tipe_saldo'], $tahunBuku['tanggal_mulai'], $tanggalSebelumnya);
+            $saldoAwalPeriode += $mutasiSebelumnya;
+        }
+
+        $mutasiPeriode = 0;
+        if ($akun['kode_akun'] !== '3-9000') {
+            $mutasiPeriode = hitung_mutasi_jurnal_akun($id, $akun['tipe_saldo'], $tanggalMulai, $tanggalSelesai);
+        }
+
+        $labaAkun = 0;
+        if ($akun['kode_akun'] === '3-9000') {
+            $labaAkun = $labaBersih;
+        }
+
+        $saldoAkhirPeriode = $saldoAwalPeriode + $mutasiPeriode + $labaAkun;
+
+        $valAwal = $akun['tipe_saldo'] === 'Debit' ? -$saldoAwalPeriode : $saldoAwalPeriode;
+        $valMutasi = $akun['tipe_saldo'] === 'Debit' ? -$mutasiPeriode : $mutasiPeriode;
+        $valLaba = $labaAkun;
+        $valAkhir = $valAwal + $valMutasi + $valLaba;
+
+        if ($akun['parent_id'] === null) {
+            $hasil[] = [
+                'kode_akun' => $akun['kode_akun'],
+                'nama_akun' => $akun['nama_akun'],
+                'saldo_awal' => $valAwal,
+                'mutasi' => $valMutasi,
+                'laba_bersih' => $valLaba,
+                'saldo_akhir' => $valAkhir,
+            ];
+
+            $totalAwal += $valAwal;
+            $totalMutasi += $valMutasi;
+            $totalLaba += $valLaba;
+            $totalAkhir += $valAkhir;
+        }
+    }
+
+    return [
+        'baris' => $hasil,
+        'total_awal' => $totalAwal,
+        'total_mutasi' => $totalMutasi,
+        'total_laba' => $totalLaba,
+        'total_akhir' => $totalAkhir,
+    ];
+}
+
+function ambil_jurnal_penyesuaian($batas = 15)
+{
+    $batas = (int) $batas;
+    $tahunBuku = ambil_tahun_buku_aktif();
+    
+    $filterPeriode = " WHERE j.jenis_transaksi = 'Penyesuaian'";
+    if ($tahunBuku) {
+        $filterPeriode .= " AND j.tanggal >= '" . addslashes($tahunBuku['tanggal_mulai']) . "' AND j.tanggal <= '" . addslashes($tahunBuku['tanggal_selesai']) . "'";
+    }
+
+    return kueri_semua(
+        'SELECT j.*, COALESCE(SUM(jd.debit), 0) AS total_nominal
+         FROM jurnal j
+         LEFT JOIN jurnal_detail jd ON jd.jurnal_id = j.id
+         ' . $filterPeriode . '
+         GROUP BY j.id
+         ORDER BY j.tanggal DESC, j.id DESC
+         LIMIT ' . $batas
+    );
 }

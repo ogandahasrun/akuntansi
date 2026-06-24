@@ -9,46 +9,39 @@ if ($metodeRequest === 'POST') {
 
     try {
         if ($aksi === 'simpan_kontak') {
+            // Hardcode jenis sebagai Pemasok
+            $_POST['jenis'] = 'Pemasok';
             simpan_kontak($_POST);
-            atur_flash('success', 'Kontak berhasil ditambahkan.');
+            atur_flash('success', 'Pemasok berhasil ditambahkan.');
         }
 
         if ($aksi === 'bayar_relasi') {
             catat_pembayaran_relasi((int) ($_POST['id_relasi'] ?? 0), $_POST['jumlah_bayar'] ?? 0);
-            atur_flash('success', 'Pembayaran berhasil dicatat.');
+            atur_flash('success', 'Pembayaran hutang berhasil dicatat.');
         }
 
-        header('Location: hutang_piutang.php');
+        header('Location: hutang.php');
         exit;
     } catch (Throwable $exception) {
         atur_flash('error', $exception->getMessage());
-        header('Location: hutang_piutang.php');
+        header('Location: hutang.php');
         exit;
     }
 }
 
 $kontak = ambil_daftar_kontak();
-$filterJenis = trim($_GET['jenis'] ?? '');
+// Filter hanya pemasok
+$kontakPemasok = array_values(array_filter($kontak, function ($item) {
+    return ($item['jenis'] ?? '') === 'Pemasok';
+}));
+
 $filterStatus = trim($_GET['status'] ?? '');
 $filterKontakId = (int) ($_GET['kontak_id'] ?? 0);
 $relasi = ambil_relasi_hutang_piutang([
-    'jenis' => $filterJenis,
+    'jenis' => 'Hutang',
     'status' => $filterStatus,
     'kontak_id' => $filterKontakId,
 ]);
-$kontakFilter = $kontak;
-
-if ($filterJenis === 'Hutang') {
-    $kontakFilter = array_values(array_filter($kontak, function ($item) {
-        return ($item['jenis'] ?? '') === 'Pemasok';
-    }));
-}
-
-if ($filterJenis === 'Piutang') {
-    $kontakFilter = array_values(array_filter($kontak, function ($item) {
-        return ($item['jenis'] ?? '') === 'Pelanggan';
-    }));
-}
 
 $totalNominal = 0;
 $totalDibayar = 0;
@@ -59,11 +52,11 @@ foreach ($relasi as $itemRelasi) {
     $totalSisa += (float) $itemRelasi['sisa'];
 }
 
-render_header('Hutang dan Piutang', 'hutang_piutang');
+render_header('Kelola Hutang', 'hutang');
 ?>
 <section class="grid-two">
     <article class="panel">
-        <h3>Tambah Kontak</h3>
+        <h3>Tambah Pemasok (Supplier)</h3>
         <form method="post" class="form-grid">
             <input type="hidden" name="aksi" value="simpan_kontak">
             <label>
@@ -71,48 +64,34 @@ render_header('Hutang dan Piutang', 'hutang_piutang');
                 <input type="text" name="kode_kontak" placeholder="Contoh: SUP-1">
             </label>
             <label>
-                <span>Nama Kontak</span>
+                <span>Nama Pemasok</span>
                 <input type="text" name="nama" required>
-            </label>
-            <label>
-                <span>Jenis Kontak</span>
-                <select name="jenis">
-                    <option value="Pelanggan">Pelanggan</option>
-                    <option value="Pemasok">Pemasok</option>
-                </select>
             </label>
             <label>
                 <span>Telepon</span>
                 <input type="text" name="telepon">
             </label>
-            <label>
+            <label class="full-width">
                 <span>Alamat</span>
                 <textarea name="alamat" rows="3"></textarea>
             </label>
-            <button type="submit" class="button primary">Simpan Kontak</button>
+            <button type="submit" class="button primary">Simpan Pemasok</button>
         </form>
     </article>
     <article class="panel">
         <h3>Cara Pakai</h3>
-        <p>Masukkan transaksi hutang atau piutang dari halaman jurnal umum. Di halaman ini Anda dapat memantau tagihan yang berjalan dan mencatat pembayaran secara ringkas.</p>
-        <p class="helper-text">Agar arus kas tetap benar, pembayaran nyata tetap sebaiknya dicatat juga di jurnal umum.</p>
+        <p>Masukkan transaksi hutang dari halaman <strong>Jurnal Umum</strong> dengan memilih jenis transaksi <strong>Hutang</strong>.</p>
+        <p>Di halaman ini Anda dapat memantau tagihan hutang kepada pemasok yang sedang berjalan dan mencatat pelunasan/pembayaran secara ringkas.</p>
+        <p class="helper-text">Agar catatan arus kas tetap benar, disarankan mencatat transaksi pembayaran nyata melalui Jurnal Umum menggunakan jenis <strong>Bayar Hutang</strong>.</p>
     </article>
 </section>
 
 <section class="panel">
     <div class="section-title">
-        <h3>Daftar Hutang dan Piutang</h3>
-        <span>Total kontak aktif: <?php echo count($kontak); ?></span>
+        <h3>Daftar Hutang (Kewajiban)</h3>
+        <span>Total pemasok aktif: <?php echo count($kontakPemasok); ?></span>
     </div>
     <form method="get" class="form-grid filter-grid compact-filter-grid">
-        <label>
-            <span>Jenis Relasi</span>
-            <select name="jenis" onchange="this.form.submit()">
-                <option value="">Semua</option>
-                <option value="Hutang" <?php echo $filterJenis === 'Hutang' ? 'selected' : ''; ?>>Hutang</option>
-                <option value="Piutang" <?php echo $filterJenis === 'Piutang' ? 'selected' : ''; ?>>Piutang</option>
-            </select>
-        </label>
         <label>
             <span>Status</span>
             <select name="status">
@@ -123,30 +102,30 @@ render_header('Hutang dan Piutang', 'hutang_piutang');
             </select>
         </label>
         <label>
-            <span>Kontak</span>
+            <span>Pemasok</span>
             <select name="kontak_id">
-                <option value="0">Semua kontak</option>
-                <?php foreach ($kontakFilter as $item) { ?>
+                <option value="0">Semua pemasok</option>
+                <?php foreach ($kontakPemasok as $item) { ?>
                     <option value="<?php echo (int) $item['id']; ?>" <?php echo $filterKontakId === (int) $item['id'] ? 'selected' : ''; ?>><?php echo e(($item['kode_kontak'] ? $item['kode_kontak'] . ' - ' : '') . $item['nama']); ?></option>
                 <?php } ?>
             </select>
         </label>
         <div class="button-row align-end-actions">
             <button type="submit" class="button primary">Terapkan</button>
-            <a href="hutang_piutang.php" class="button ghost">Reset</a>
+            <a href="hutang.php" class="button ghost">Reset</a>
         </div>
     </form>
     <div class="cards three-up compact-cards">
-        <article class="card accent-a">
-            <p>Total Nominal</p>
+        <article class="card accent-b">
+            <p>Total Nominal Hutang</p>
             <strong><?php echo e(format_rupiah($totalNominal)); ?></strong>
         </article>
-        <article class="card accent-b">
+        <article class="card accent-a">
             <p>Total Dibayar</p>
             <strong><?php echo e(format_rupiah($totalDibayar)); ?></strong>
         </article>
         <article class="card accent-c">
-            <p>Total Sisa</p>
+            <p>Total Sisa Hutang</p>
             <strong><?php echo e(format_rupiah($totalSisa)); ?></strong>
         </article>
     </div>
@@ -154,8 +133,7 @@ render_header('Hutang dan Piutang', 'hutang_piutang');
         <thead>
             <tr>
                 <th>Tanggal</th>
-                <th>Jenis</th>
-                <th>Kontak</th>
+                <th>Pemasok</th>
                 <th>Jatuh Tempo</th>
                 <th class="align-right">Nominal</th>
                 <th class="align-right">Dibayar</th>
@@ -167,13 +145,12 @@ render_header('Hutang dan Piutang', 'hutang_piutang');
         <tbody>
             <?php if (empty($relasi)) { ?>
                 <tr>
-                    <td colspan="9" class="empty-state">Belum ada data hutang atau piutang.</td>
+                    <td colspan="8" class="empty-state">Belum ada data hutang.</td>
                 </tr>
             <?php } ?>
             <?php foreach ($relasi as $baris) { ?>
                 <tr>
                     <td><?php echo e(format_tanggal_indonesia($baris['tanggal'])); ?></td>
-                    <td><?php echo e($baris['jenis']); ?></td>
                     <td><?php echo e(($baris['kode_kontak'] ? $baris['kode_kontak'] . ' - ' : '') . $baris['nama_kontak']); ?></td>
                     <td><?php echo e(format_tanggal_indonesia($baris['jatuh_tempo'])); ?></td>
                     <td class="align-right"><?php echo e(format_rupiah($baris['nominal'])); ?></td>
@@ -212,28 +189,26 @@ render_header('Hutang dan Piutang', 'hutang_piutang');
 </section>
 
 <section class="panel">
-    <h3>Kontak Aktif</h3>
+    <h3>Daftar Pemasok Aktif</h3>
     <table class="table compact">
         <thead>
             <tr>
-                <th>Kode</th>
-                <th>Nama</th>
-                <th>Jenis</th>
+                <th>Kode Pemasok</th>
+                <th>Nama Pemasok</th>
                 <th>Telepon</th>
                 <th>Alamat</th>
             </tr>
         </thead>
         <tbody>
-            <?php if (empty($kontak)) { ?>
+            <?php if (empty($kontakPemasok)) { ?>
                 <tr>
-                    <td colspan="5" class="empty-state">Belum ada kontak.</td>
+                    <td colspan="4" class="empty-state">Belum ada data pemasok.</td>
                 </tr>
             <?php } ?>
-            <?php foreach ($kontak as $item) { ?>
+            <?php foreach ($kontakPemasok as $item) { ?>
                 <tr>
                     <td><?php echo e($item['kode_kontak'] ?: '-'); ?></td>
                     <td><?php echo e($item['nama']); ?></td>
-                    <td><?php echo e($item['jenis']); ?></td>
                     <td><?php echo e($item['telepon']); ?></td>
                     <td><?php echo e($item['alamat']); ?></td>
                 </tr>
