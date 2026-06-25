@@ -181,18 +181,130 @@ render_header('Jurnal Penyesuaian', 'jurnal_penyesuaian');
     </table>
 </section>
 
+<style>
+.searchable-select-wrapper {
+    position: relative;
+    width: 100%;
+}
+.search-akun-input {
+    width: 100%;
+    padding: 6px 10px;
+    margin-bottom: 5px;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
+    background-color: #fff;
+    color: #333;
+}
+.search-akun-input:focus {
+    border-color: #3b82f6;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+</style>
+
 <script>
+// ====== Fitur Pencarian Akun (Searchable Select) ======
+function setupSearchableSelect(select) {
+    if (!select) return;
+    
+    // Simpan pilihan asli
+    if (!select.originalOptions) {
+        select.originalOptions = Array.from(select.options).map(opt => ({
+            value: opt.value,
+            text: opt.textContent,
+            selected: opt.selected
+        }));
+    }
+    
+    let wrapper = select.parentElement;
+    if (!wrapper.classList.contains('searchable-select-wrapper')) {
+        wrapper = document.createElement('div');
+        wrapper.className = 'searchable-select-wrapper';
+        select.parentNode.insertBefore(wrapper, select);
+        wrapper.appendChild(select);
+        
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Cari kode / nama akun...';
+        searchInput.className = 'search-akun-input';
+        
+        wrapper.insertBefore(searchInput, select);
+        
+        searchInput.addEventListener('input', function() {
+            const query = this.value.toLowerCase().trim();
+            const currentValue = select.value;
+            
+            // Bersihkan pilihan saat ini
+            select.innerHTML = '';
+            
+            // Filter opsi
+            select.originalOptions.forEach(opt => {
+                if (opt.value === '' || opt.text.toLowerCase().includes(query)) {
+                    const newOpt = new Option(opt.text, opt.value);
+                    newOpt.selected = (opt.value === currentValue);
+                    select.add(newOpt);
+                }
+            });
+        });
+    }
+}
+
+function inisialisasiBaris(row) {
+    const select = row.querySelector('select[name="akun_id[]"]');
+    if (!select) return;
+
+    // Bersihkan wrapper lama jika ada (jika mengkloning baris yang sudah ter-wrap)
+    const wrapperLama = row.querySelector('.searchable-select-wrapper');
+    if (wrapperLama) {
+        wrapperLama.parentNode.insertBefore(select, wrapperLama);
+        wrapperLama.parentNode.removeChild(wrapperLama);
+    }
+    
+    // Reset data pencarian lama
+    select.originalOptions = null;
+    
+    setupSearchableSelect(select);
+}
+
+function inisialisasiPencarianAkun() {
+    document.querySelectorAll('#tabelJurnal tbody tr').forEach(function (row) {
+        inisialisasiBaris(row);
+    });
+}
+
+// Jalankan pencarian saat halaman dimuat
+document.addEventListener('DOMContentLoaded', inisialisasiPencarianAkun);
+if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    inisialisasiPencarianAkun();
+}
+
 document.getElementById('tambahBaris').addEventListener('click', function () {
     const tbody = document.querySelector('#tabelJurnal tbody');
     const barisPertama = tbody.querySelector('tr');
     const barisBaru = barisPertama.cloneNode(true);
-    barisBaru.querySelectorAll('input').forEach(function (input) {
+    
+    // Masukkan ke DOM terlebih dahulu
+    tbody.appendChild(barisBaru);
+    
+    // Reset input nominal ke 0
+    barisBaru.querySelectorAll('input[type="number"]').forEach(function (input) {
         input.value = '0';
     });
-    barisBaru.querySelectorAll('select').forEach(function (select) {
-        select.selectedIndex = 0;
-    });
-    tbody.appendChild(barisBaru);
+    
+    // Inisialisasi ulang select pencarian di baris baru
+    inisialisasiBaris(barisBaru);
+    
+    // Reset input teks pencarian & select value
+    const searchInput = barisBaru.querySelector('.search-akun-input');
+    if (searchInput) {
+        searchInput.value = '';
+    }
+    const select = barisBaru.querySelector('select[name="akun_id[]"]');
+    if (select) {
+        select.value = '';
+    }
 });
 </script>
 <?php

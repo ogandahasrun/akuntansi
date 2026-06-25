@@ -1367,7 +1367,15 @@ function normalisasi_input_jurnal($data)
     $tahunBukuAktif = ambil_tahun_buku_aktif();
 
     if ($nomorBukti === '') {
-        $nomorBukti = 'JR-' . date('YmdHis');
+        if ($jenisTransaksi === 'Penyesuaian') {
+            $nomorBukti = 'AJP-' . date('YmdHis');
+        } else {
+            $nomorBukti = 'JR-' . date('YmdHis');
+        }
+    } elseif ($jenisTransaksi === 'Penyesuaian') {
+        if (stripos($nomorBukti, 'AJP-') !== 0 && stripos($nomorBukti, 'TEST-AJP-') !== 0) {
+            $nomorBukti = 'AJP-' . $nomorBukti;
+        }
     }
 
     if ($tahunBukuAktif && ($tanggal < $tahunBukuAktif['tanggal_mulai'] || $tanggal > $tahunBukuAktif['tanggal_selesai'])) {
@@ -1543,7 +1551,21 @@ function simpan_jurnal($data)
         $stmtJurnal->bind_param('ssss', $inputJurnal['tanggal'], $inputJurnal['nomor_bukti'], $inputJurnal['keterangan'], $inputJurnal['jenis_transaksi']);
 
         if (!$stmtJurnal->execute()) {
-            throw new Exception('Gagal menyimpan jurnal: ' . $stmtJurnal->error);
+            // Fallback jika jenis_transaksi = 'Penyesuaian' ditolak oleh ENUM database
+            if ($inputJurnal['jenis_transaksi'] === 'Penyesuaian' && stripos($stmtJurnal->error, 'truncated') !== false) {
+                $stmtJurnal->close();
+                $jenisFallback = 'Umum';
+                if (stripos($inputJurnal['nomor_bukti'], 'AJP-') !== 0 && stripos($inputJurnal['nomor_bukti'], 'TEST-AJP-') !== 0) {
+                    $inputJurnal['nomor_bukti'] = 'AJP-' . $inputJurnal['nomor_bukti'];
+                }
+                $stmtJurnal = $koneksi->prepare('INSERT INTO jurnal (tanggal, nomor_bukti, keterangan, jenis_transaksi) VALUES (?, ?, ?, ?)');
+                $stmtJurnal->bind_param('ssss', $inputJurnal['tanggal'], $inputJurnal['nomor_bukti'], $inputJurnal['keterangan'], $jenisFallback);
+                if (!$stmtJurnal->execute()) {
+                    throw new Exception('Gagal menyimpan jurnal (dengan fallback): ' . $stmtJurnal->error);
+                }
+            } else {
+                throw new Exception('Gagal menyimpan jurnal: ' . $stmtJurnal->error);
+            }
         }
 
         $jurnalId = $stmtJurnal->insert_id;
@@ -1588,7 +1610,29 @@ function ubah_jurnal($jurnalId, $data)
         );
 
         if (!$stmtJurnal->execute()) {
-            throw new Exception('Gagal mengubah jurnal: ' . $stmtJurnal->error);
+            if ($inputJurnal['jenis_transaksi'] === 'Penyesuaian' && stripos($stmtJurnal->error, 'truncated') !== false) {
+                $stmtJurnal->close();
+                $jenisFallback = 'Umum';
+                if (stripos($inputJurnal['nomor_bukti'], 'AJP-') !== 0 && stripos($inputJurnal['nomor_bukti'], 'TEST-AJP-') !== 0) {
+                    $inputJurnal['nomor_bukti'] = 'AJP-' . $inputJurnal['nomor_bukti'];
+                }
+                $stmtJurnal = $koneksi->prepare(
+                    'UPDATE jurnal SET tanggal = ?, nomor_bukti = ?, keterangan = ?, jenis_transaksi = ? WHERE id = ?'
+                );
+                $stmtJurnal->bind_param(
+                    'ssssi',
+                    $inputJurnal['tanggal'],
+                    $inputJurnal['nomor_bukti'],
+                    $inputJurnal['keterangan'],
+                    $jenisFallback,
+                    $jurnalId
+                );
+                if (!$stmtJurnal->execute()) {
+                    throw new Exception('Gagal mengubah jurnal (dengan fallback): ' . $stmtJurnal->error);
+                }
+            } else {
+                throw new Exception('Gagal mengubah jurnal: ' . $stmtJurnal->error);
+            }
         }
 
         $stmtJurnal->close();
@@ -2059,7 +2103,7 @@ function ambil_jurnal_terbaru($batas = 10, $excludePenyesuaian = false)
         $conds[] = "j.tanggal >= '" . addslashes($tahunBuku['tanggal_mulai']) . "' AND j.tanggal <= '" . addslashes($tahunBuku['tanggal_selesai']) . "'";
     }
     if ($excludePenyesuaian) {
-        $conds[] = "j.jenis_transaksi != 'Penyesuaian'";
+        $conds[] = "j.jenis_transaksi != 'Penyesuaian' AND j.nomor_bukti NOT LIKE 'AJP-%' AND j.nomor_bukti NOT LIKE 'TEST-AJP-%'";
     }
 
     $where = '';
@@ -2757,7 +2801,7 @@ function ambil_jurnal_penyesuaian($batas = 15)
     $batas = (int) $batas;
     $tahunBuku = ambil_tahun_buku_aktif();
     
-    $filterPeriode = " WHERE j.jenis_transaksi = 'Penyesuaian'";
+    $filterPeriode = " WHERE (j.jenis_transaksi = 'Penyesuaian' OR (j.jenis_transaksi = 'Umum' AND (j.nomor_bukti LIKE 'AJP-%' OR j.nomor_bukti LIKE 'TEST-AJP-%')))";
     if ($tahunBuku) {
         $filterPeriode .= " AND j.tanggal >= '" . addslashes($tahunBuku['tanggal_mulai']) . "' AND j.tanggal <= '" . addslashes($tahunBuku['tanggal_selesai']) . "'";
     }
