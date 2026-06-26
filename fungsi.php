@@ -525,6 +525,31 @@ function sinkronisasi_skema_users()
     $sudahDicek = true;
 }
 
+function sinkronisasi_skema_aset_tetap()
+{
+    static $sudahDicek = false;
+    global $koneksi;
+
+    if ($sudahDicek || schema_sudah_siap() || !database_terpasang()) {
+        return;
+    }
+
+    $koneksi->query(
+        "CREATE TABLE IF NOT EXISTS aset_tetap (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            nama_aset VARCHAR(150) NOT NULL,
+            tanggal_perolehan DATE NOT NULL,
+            harga_perolehan DECIMAL(18,2) NOT NULL DEFAULT 0,
+            umur_ekonomis INT NOT NULL COMMENT 'Umur ekonomis dalam tahun',
+            nilai_residu DECIMAL(18,2) NOT NULL DEFAULT 0,
+            kategori_aset ENUM('Gedung', 'Kendaraan', 'Peralatan Kantor', 'Peralatan Medis', 'Bangunan Lainnya') NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"
+    );
+
+    $sudahDicek = true;
+}
+
 function sinkronisasi_akun_default()
 {
     static $sudahDicek = false;
@@ -571,6 +596,7 @@ function ambil_pengaturan()
         sinkronisasi_skema_akun();
         sinkronisasi_skema_jurnal();
         sinkronisasi_skema_users();
+        sinkronisasi_skema_aset_tetap();
         sinkronisasi_akun_default();
         // Tandai bahwa semua skema dan data default sudah siap
         tandai_schema_selesai();
@@ -677,6 +703,7 @@ function render_header($judul, $halamanAktif = '')
         'akun' => ['label' => 'Daftar Akun', 'url' => 'akun.php'],
         'jurnal' => ['label' => 'Jurnal Umum', 'url' => 'jurnal_umum.php'],
         'jurnal_penyesuaian' => ['label' => 'Jurnal Penyesuaian', 'url' => 'jurnal_penyesuaian.php'],
+        'aset_tetap' => ['label' => 'Aset Tetap', 'url' => 'aset_tetap.php'],
         'buku_besar' => ['label' => 'Buku Besar', 'url' => 'buku_besar.php'],
         'hutang' => ['label' => 'Hutang', 'url' => 'hutang.php'],
         'piutang' => ['label' => 'Piutang', 'url' => 'piutang.php'],
@@ -691,6 +718,7 @@ function render_header($judul, $halamanAktif = '')
         $menu['pengguna'] = ['label' => 'Kelola Pengguna', 'url' => 'pengguna.php'];
     }
 
+    $menu['panduan'] = ['label' => 'Panduan Aplikasi', 'url' => 'panduan.php'];
     $menu['pengaturan'] = ['label' => 'Pengaturan', 'url' => 'pengaturan.php'];
     ?>
     <!doctype html>

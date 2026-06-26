@@ -251,3 +251,14 @@ CREATE TABLE IF NOT EXISTS users (
 INSERT INTO users (username, password, nama_lengkap, role, aktif)
 VALUES ('admin', '$2y$10$K874CWBXketWi9Phwwyafe0HoU82HLo5hegEobuUC.jBmcpuGE6X.', 'Administrator', 'admin', 1)
 ON DUPLICATE KEY UPDATE id = id;
+
+CREATE TABLE IF NOT EXISTS aset_tetap (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nama_aset VARCHAR(150) NOT NULL,
+    tanggal_perolehan DATE NOT NULL,
+    harga_perolehan DECIMAL(18,2) NOT NULL DEFAULT 0,
+    umur_ekonomis INT NOT NULL COMMENT 'Umur ekonomis dalam tahun',
+    nilai_residu DECIMAL(18,2) NOT NULL DEFAULT 0,
+    kategori_aset ENUM('Gedung', 'Kendaraan', 'Peralatan Kantor', 'Peralatan Medis', 'Bangunan Lainnya') NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
