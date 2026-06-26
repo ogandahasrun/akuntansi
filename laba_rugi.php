@@ -10,7 +10,7 @@ $laporan = hitung_laba_rugi_bersih($tanggalMulai, $tanggalSelesai);
 $pengaturan = ambil_pengaturan();
 $tahunBuku = ambil_tahun_buku_aktif();
 
-render_header('Laporan Rugi Laba', 'rugi_laba');
+render_header('Laporan Laba Rugi', 'laba_rugi');
 ?>
 
 <!-- Kop Surat Khusus Cetak (Print Only) -->
@@ -20,7 +20,7 @@ render_header('Laporan Rugi Laba', 'rugi_laba');
             <img src="<?php echo e($pengaturan['logo']); ?>" alt="Logo" class="print-logo">
         <?php } ?>
         <h2><?php echo e($pengaturan['nama_perusahaan']); ?></h2>
-        <h1>LAPORAN RUGI LABA</h1>
+        <h1>LAPORAN LABA RUGI</h1>
         <p class="print-period">
             Periode: 
             <?php 
@@ -45,7 +45,7 @@ render_header('Laporan Rugi Laba', 'rugi_laba');
 
 <!-- Tombol & Filter (Screen Only) -->
 <section class="panel screen-only">
-    <h3>Filter Laporan Rugi Laba</h3>
+    <h3>Filter Laporan Laba Rugi</h3>
     <form method="get" class="form-grid filter-grid">
         <label>
             <span>Tanggal Mulai</span>
@@ -148,7 +148,7 @@ document.getElementById('btnCopy').addEventListener('click', function() {
     const totalBeban = <?php echo (float) $laporan['total_beban']; ?>;
     const labaBersih = <?php echo (float) $laporan['laba_bersih']; ?>;
     
-    let output = "LAPORAN RUGI LABA\r\n";
+    let output = "LAPORAN LABA RUGI\r\n";
     output += "===================================\r\n\r\n";
     
     output += "PENDAPATAN\r\n";

@@ -682,7 +682,7 @@ function render_header($judul, $halamanAktif = '')
         'piutang' => ['label' => 'Piutang', 'url' => 'piutang.php'],
         'arus_kas' => ['label' => 'Arus Kas', 'url' => 'arus_kas.php'],
         'neraca' => ['label' => 'Neraca', 'url' => 'neraca.php'],
-        'rugi_laba' => ['label' => 'Rugi Laba', 'url' => 'rugi_laba.php'],
+        'laba_rugi' => ['label' => 'Laba Rugi', 'url' => 'laba_rugi.php'],
         'perubahan_ekuitas' => ['label' => 'Perubahan Ekuitas', 'url' => 'perubahan_ekuitas.php'],
         'tahun_buku' => ['label' => 'Tahun Buku', 'url' => 'tahun_buku.php'],
     ];
