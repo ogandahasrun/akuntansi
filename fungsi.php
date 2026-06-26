@@ -848,10 +848,10 @@ function ambil_daftar_kontak($jenis = '')
 
     // sinkronisasi_skema_kontak sudah ditangani oleh ambil_pengaturan()
     if ($jenis === '') {
-        return kueri_semua("SELECT * FROM kontak WHERE aktif = 1 ORDER BY nama ASC");
+        return kueri_semua("SELECT * FROM kontak WHERE aktif = 1 ORDER BY CASE WHEN kode_kontak IS NULL OR kode_kontak = '' THEN 1 ELSE 0 END, kode_kontak ASC, nama ASC");
     }
 
-    $stmt = $koneksi->prepare("SELECT * FROM kontak WHERE aktif = 1 AND jenis = ? ORDER BY nama ASC");
+    $stmt = $koneksi->prepare("SELECT * FROM kontak WHERE aktif = 1 AND jenis = ? ORDER BY CASE WHEN kode_kontak IS NULL OR kode_kontak = '' THEN 1 ELSE 0 END, kode_kontak ASC, nama ASC");
     $stmt->bind_param('s', $jenis);
     $stmt->execute();
     $hasil = $stmt->get_result();

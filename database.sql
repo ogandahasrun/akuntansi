@@ -15,12 +15,14 @@ ON DUPLICATE KEY UPDATE id = id;
 CREATE TABLE IF NOT EXISTS akun (
     id INT AUTO_INCREMENT PRIMARY KEY,
     kode_akun VARCHAR(20) NOT NULL UNIQUE,
+    parent_id INT NULL DEFAULT NULL,
     nama_akun VARCHAR(120) NOT NULL,
     kategori ENUM('Aset', 'Kewajiban', 'Ekuitas', 'Pendapatan', 'Beban') NOT NULL,
     tipe_saldo ENUM('Debit', 'Kredit') NOT NULL,
     is_kas TINYINT(1) NOT NULL DEFAULT 0,
     aktif TINYINT(1) NOT NULL DEFAULT 1,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_akun_parent FOREIGN KEY (parent_id) REFERENCES akun(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS tahun_buku (
@@ -187,6 +189,8 @@ CREATE TABLE IF NOT EXISTS jurnal (
     nomor_bukti VARCHAR(50) NOT NULL,
     keterangan TEXT NULL,
     jenis_transaksi ENUM('Umum', 'Kas', 'Hutang', 'Piutang', 'Bayar Hutang', 'Terima Piutang', 'Penyesuaian') NOT NULL DEFAULT 'Umum',
+    hutang_piutang_id INT NULL DEFAULT NULL,
+    nominal_bayar DECIMAL(18,2) NULL DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
