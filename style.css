@@ -95,6 +95,16 @@ a {
     transform: translateX(4px);
 }
 
+.menu-section-title {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 248, 239, 0.45);
+    margin: 12px 0 2px 4px;
+    display: block;
+}
+
 .main-content {
     padding: 28px;
 }

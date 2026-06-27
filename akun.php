@@ -142,10 +142,22 @@ render_header('Daftar Akun', 'akun');
                     <option value="Kredit" <?php echo ($akunEdit['tipe_saldo'] ?? 'Debit') === 'Kredit' ? 'selected' : ''; ?>>Kredit</option>
                 </select>
             </label>
-            <label class="checkbox-row full-width">
-                <input type="checkbox" name="is_kas" value="1"
-                       <?php echo !empty($akunEdit['is_kas']) ? 'checked' : ''; ?>>
-                <span>Tandai sebagai akun kas/bank</span>
+            <label class="full-width">
+                <span>Tipe Detail Akun</span>
+                <select name="tipe_detail" id="inp-tipe-detail">
+                    <option value="Umum" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Umum' ? 'selected' : ''; ?>>Umum</option>
+                    <option value="Kas/Bank" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Kas/Bank' ? 'selected' : ''; ?>>Kas / Bank</option>
+                    <option value="Persediaan" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Persediaan' ? 'selected' : ''; ?>>Persediaan / Perlengkapan</option>
+                    <option value="Piutang" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Piutang' ? 'selected' : ''; ?>>Piutang Usaha</option>
+                    <option value="Hutang" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Hutang' ? 'selected' : ''; ?>>Hutang Usaha</option>
+                    <option value="Aset Tetap" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Aset Tetap' ? 'selected' : ''; ?>>Aset Tetap</option>
+                    <option value="Akm Penyusutan" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Akm Penyusutan' ? 'selected' : ''; ?>>Akumulasi Penyusutan</option>
+                    <option value="Biaya Dibayar Dimuka" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Biaya Dibayar Dimuka' ? 'selected' : ''; ?>>Biaya Dibayar di Muka</option>
+                    <option value="Pendapatan Diterima Dimuka" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Pendapatan Diterima Dimuka' ? 'selected' : ''; ?>>Pendapatan Diterima di Muka</option>
+                    <option value="Hutang Jangka Panjang" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Hutang Jangka Panjang' ? 'selected' : ''; ?>>Hutang Jangka Panjang</option>
+                    <option value="Pajak" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Pajak' ? 'selected' : ''; ?>>Pajak</option>
+                    <option value="Saldo Laba" <?php echo ($akunEdit['tipe_detail'] ?? 'Umum') === 'Saldo Laba' ? 'selected' : ''; ?>>Saldo Laba / Akun Sistem</option>
+                </select>
             </label>
             <div class="button-row full-width" style="margin-top:4px">
                 <button type="submit" class="button primary">
@@ -216,7 +228,7 @@ render_header('Daftar Akun', 'akun');
                 <th style="width:130px">Kode</th>
                 <th>Nama Akun</th>
                 <th style="width:80px">Tipe Saldo</th>
-                <th style="width:80px">Kas/Bank</th>
+                <th style="width:120px">Tipe Detail</th>
                 <th style="width:110px;text-align:right">Aksi</th>
             </tr>
         </thead>
@@ -255,7 +267,30 @@ render_header('Daftar Akun', 'akun');
                     </span>
                 </td>
 
-                <td><?php echo $baris['is_kas'] ? '<span class="kas-ya">✓ Ya</span>' : '<span style="color:var(--muted)">—</span>'; ?></td>
+                <td>
+                    <?php 
+                    $badgeColors = [
+                        'Kas/Bank' => ['bg' => '#d1fae5', 'color' => '#065f46', 'label' => 'Kas/Bank'],
+                        'Persediaan' => ['bg' => '#dbeafe', 'color' => '#1e40af', 'label' => 'Persediaan'],
+                        'Piutang' => ['bg' => '#e0f2fe', 'color' => '#0369a1', 'label' => 'Piutang'],
+                        'Hutang' => ['bg' => '#ffedd5', 'color' => '#c2410c', 'label' => 'Hutang'],
+                        'Aset Tetap' => ['bg' => '#f3e8ff', 'color' => '#6b21a8', 'label' => 'Aset Tetap'],
+                        'Akm Penyusutan' => ['bg' => '#f1f5f9', 'color' => '#334155', 'label' => 'Akm Penyusutan'],
+                        'Biaya Dibayar Dimuka' => ['bg' => '#fae8ff', 'color' => '#86198f', 'label' => 'Beban Dbm'],
+                        'Pendapatan Diterima Dimuka' => ['bg' => '#fef9c3', 'color' => '#854d0e', 'label' => 'Pendapatan Dm'],
+                        'Hutang Jangka Panjang' => ['bg' => '#fee2e2', 'color' => '#991b1b', 'label' => 'Hutang JKP'],
+                        'Pajak' => ['bg' => '#ccfbf1', 'color' => '#0f766e', 'label' => 'Pajak'],
+                        'Saldo Laba' => ['bg' => '#f5f5f4', 'color' => '#44403c', 'label' => 'Saldo Laba (S)'],
+                    ];
+                    $detailType = $baris['tipe_detail'] ?? 'Umum';
+                    if (isset($badgeColors[$detailType])) {
+                        $b = $badgeColors[$detailType];
+                        echo '<span style="background-color:' . $b['bg'] . '; color:' . $b['color'] . '; padding:2px 8px; border-radius:4px; font-size:0.8rem; font-weight:600;">' . e($b['label']) . '</span>';
+                    } else {
+                        echo '<span style="color:var(--muted)">—</span>';
+                    }
+                    ?>
+                </td>
 
                 <td>
                     <div class="inline-actions" style="justify-content:flex-end">

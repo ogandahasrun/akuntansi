@@ -179,8 +179,76 @@ details.panduan-item[open] summary::after {
             <h4>Kasus C: Sewa Kantor Dibayar di Muka (Prepaid Expense)</h4>
             <p>Membayar sewa kantor Rp12.000.000,00 pada Januari untuk jangka waktu 1 tahun. Penyesuaian untuk bulan berjalan (1 bulan = Rp1.000.000,00):</p>
             <div class="example-box">
-                <span class="badge badge-debit">DEBIT</span> <code>6-1500 - Biaya Sewa</code> $\rightarrow$ Rp1.000.000<br>
-                <span class="badge badge-kredit">KREDIT</span> <code>1-2004 - Biaya Dibayar Dimuka</code> $\rightarrow$ Rp1.000.000
+                <span class="badge badge-debit">DEBIT</span> <code>6-1500 - Biaya Sewa</code> &rarr; Rp1.000.000<br>
+                <span class="badge badge-kredit">KREDIT</span> <code>1-2004 - Biaya Dibayar Dimuka</code> &rarr; Rp1.000.000
+            </div>
+        </div>
+    </details>
+
+    <!-- Item 5: Laporan Pendapatan & Pengeluaran Kas/Bank -->
+    <details class="panduan-item">
+        <summary>5. Panduan Laporan Pendapatan &amp; Pengeluaran Kas/Bank</summary>
+        <div class="panduan-content">
+            <p>Halaman <strong>Pendapatan &amp; Pengeluaran</strong> dirancang khusus untuk menganalisis pendapatan (uang masuk) dan pengeluaran beban (uang keluar) yang terjadi secara riil melalui rekening Kas atau Bank tertentu yang Anda pilih.</p>
+            
+            <h4>Bagaimana Logika Laporan Ini Bekerja?</h4>
+            <ul>
+                <li>Sistem memetakan seluruh transaksi jurnal yang melibatkan rekening Kas/Bank terpilih (misal: Kas Tunai, Bank BNI, atau Bank Mandiri).</li>
+                <li>Dari transaksi tersebut, sistem mencari baris akun lawannya: jika merupakan akun berkategori <strong>Pendapatan</strong> akan dikelompokkan ke bagian atas (Uang Masuk), dan jika berkategori <strong>Beban</strong> akan dikelompokkan ke bagian bawah (Uang Keluar). Masing-masing kelompok diurutkan berdasarkan tanggal transaksi.</li>
+            </ul>
+
+            <h4>Bagaimana Cara Menambahkan Rekening Bank Baru di Filter Dropdown?</h4>
+            <p>Saringan akun rekening di halaman ini bersifat 100% dinamis. Jika Anda membuka rekening bank baru (misalnya Bank BCA) dan ingin rekening tersebut muncul di filter halaman Pendapatan &amp; Pengeluaran:</p>
+            <ol>
+                <li>Buka menu <strong>Daftar Akun</strong>.</li>
+                <li>Klik tombol <strong>Tambah Akun Baru</strong>.</li>
+                <li>Isi form dengan detail akun baru (Kategori: <code>Aset</code>, Tipe Saldo: <code>Debit</code>, misal Kode: <code>1-1250</code>, Nama: <code>Tabungan Bank BCA</code>).</li>
+                <li><strong>PENTING:</strong> Pada kolom pilihan <strong>"Tipe Detail Akun"</strong>, pilih opsi <strong>"Kas / Bank"</strong>. Pilihan ini akan memberi tanda <code>tipe_detail = 'Kas/Bank'</code> di database agar terbaca sebagai rekening kas/bank.</li>
+                <li>Klik <strong>Simpan Akun</strong>. Akun Bank BCA tersebut secara otomatis akan langsung terdaftar pada pilihan filter laporan Pendapatan &amp; Pengeluaran.</li>
+            </ol>
+        </div>
+    </details>
+
+    <!-- Item 6: Alur Kerja & Siklus Akuntansi -->
+    <details class="panduan-item">
+        <summary>6. Alur Kerja Aplikasi Berdasarkan Siklus Akuntansi</summary>
+        <div class="panduan-content">
+            <p>Struktur menu navigasi pada sidebar sebelah kiri dirancang secara berurutan untuk mencerminkan tahapan <strong>Siklus Akuntansi (Accounting Cycle)</strong> standar:</p>
+            
+            <ol style="margin-bottom: 20px;">
+                <li style="margin-bottom: 10px;">
+                    <strong>UTAMA (Dashboard)</strong>
+                    <br><span style="color: var(--muted); font-size: 0.9rem;">Tempat pemantauan data finansial secara real-time dan analisis grafik perkembangan pendapatan, beban, hutang, dan piutang rumah sakit.</span>
+                </li>
+                <li style="margin-bottom: 10px;">
+                    <strong>PENGATURAN AWAL (Daftar Akun &amp; Tahun Buku)</strong>
+                    <br><span style="color: var(--muted); font-size: 0.9rem;">Menyiapkan bagan akun (Chart of Accounts) dan mengaktifkan periode pembukuan berjalan sebelum memulai pencatatan transaksi harian.</span>
+                </li>
+                <li style="margin-bottom: 10px;">
+                    <strong>PENCATATAN HARIAN (Jurnal Umum, Hutang, Piutang)</strong>
+                    <br><span style="color: var(--muted); font-size: 0.9rem;">Mencatat mutasi harian secara kronologis (Jurnal Umum) serta mengelola saldo kewajiban (Hutang) dan hak penagihan (Piutang) per vendor/pasien.</span>
+                </li>
+                <li style="margin-bottom: 10px;">
+                    <strong>PENYESUAIAN PERIODIK (Aset Tetap &amp; Jurnal Penyesuaian)</strong>
+                    <br><span style="color: var(--muted); font-size: 0.9rem;">Melakukan penghitungan biaya penyusutan aset tetap secara bulanan (Aset Tetap) dan mencatat koreksi jurnal penyesuaian (AJP) akhir bulan agar nilai saldo mencerminkan kondisi riil.</span>
+                </li>
+                <li style="margin-bottom: 10px;">
+                    <strong>LAPORAN &amp; REKAP (Buku Besar &amp; Pendapatan &amp; Pengeluaran)</strong>
+                    <br><span style="color: var(--muted); font-size: 0.9rem;">Mengecek rincian mutasi per akun (Buku Besar) dan meninjau aliran rekapitulasi kas masuk/keluar khusus operasional kas/bank.</span>
+                </li>
+                <li style="margin-bottom: 10px;">
+                    <strong>LAPORAN KEUANGAN (Laba Rugi, Perubahan Ekuitas, Neraca, Arus Kas)</strong>
+                    <br><span style="color: var(--muted); font-size: 0.9rem;">Laporan akhir keuangan yang disusun secara sekuensial (laba bersih &rarr; modal akhir &rarr; neraca &rarr; arus kas) untuk pelaporan hasil kinerja rumah sakit.</span>
+                </li>
+            </ol>
+            
+            <div class="example-box" style="border-left-color: #10b981;">
+                <strong>Mengapa Urutan Laporan Keuangan Begitu Penting?</strong>
+                <p style="margin: 5px 0 0; font-size: 0.9rem;">
+                    Penyusunan laporan keuangan wajib berurutan karena output dari satu laporan menjadi input bagi laporan berikutnya:
+                    <br>1. Nilai Laba/Rugi Bersih dari <strong>Laporan Laba Rugi</strong> dikirim ke <strong>Laporan Perubahan Ekuitas</strong>.
+                    <br>2. Nilai Modal Akhir dari <strong>Laporan Perubahan Ekuitas</strong> dikirim ke pos Ekuitas di <strong>Laporan Neraca</strong>.
+                </p>
             </div>
         </div>
     </details>

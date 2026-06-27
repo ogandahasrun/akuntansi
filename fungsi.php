@@ -154,7 +154,7 @@ function sinkronisasi_skema_akun()
     static $sudahDicek = false;
     global $koneksi;
 
-    if ($sudahDicek || schema_sudah_siap() || !database_terpasang()) {
+    if ($sudahDicek || !database_terpasang()) {
         return;
     }
 
@@ -166,6 +166,32 @@ function sinkronisasi_skema_akun()
         $koneksi->query(
             "ALTER TABLE akun ADD CONSTRAINT fk_akun_parent FOREIGN KEY (parent_id) REFERENCES akun(id) ON DELETE SET NULL"
         );
+    }
+
+    // Tambah / modifikasi kolom tipe_detail jika belum sesuai (ENUM)
+    $hasilTipe = $koneksi->query("SHOW COLUMNS FROM akun LIKE 'tipe_detail'");
+    if ($hasilTipe) {
+        $row = $hasilTipe->fetch_assoc();
+        // Jika kolom belum ada atau belum bertipe ENUM yang kita inginkan
+        if (!$row || strpos($row['Type'], 'enum') === false) {
+            if (!$row) {
+                // Tambah kolom baru berjenis ENUM
+                $koneksi->query("ALTER TABLE akun ADD COLUMN tipe_detail ENUM('Umum', 'Kas/Bank', 'Persediaan', 'Piutang', 'Hutang', 'Aset Tetap', 'Akm Penyusutan', 'Biaya Dibayar Dimuka', 'Pendapatan Diterima Dimuka', 'Hutang Jangka Panjang', 'Pajak', 'Saldo Laba') NOT NULL DEFAULT 'Umum' AFTER tipe_saldo");
+                
+                // Cek apakah kolom is_kas masih ada untuk migrasi data awal
+                $hasilIsKas = $koneksi->query("SHOW COLUMNS FROM akun LIKE 'is_kas'");
+                if ($hasilIsKas && $hasilIsKas->num_rows > 0) {
+                    $koneksi->query("UPDATE akun SET tipe_detail = 'Kas/Bank' WHERE is_kas = 1");
+                    $koneksi->query("ALTER TABLE akun DROP COLUMN is_kas");
+                }
+            } else {
+                // Jika sudah ada (bertipe VARCHAR), ubah tipe kolom ke ENUM
+                $koneksi->query("ALTER TABLE akun MODIFY COLUMN tipe_detail ENUM('Umum', 'Kas/Bank', 'Persediaan', 'Piutang', 'Hutang', 'Aset Tetap', 'Akm Penyusutan', 'Biaya Dibayar Dimuka', 'Pendapatan Diterima Dimuka', 'Hutang Jangka Panjang', 'Pajak', 'Saldo Laba') NOT NULL DEFAULT 'Umum'");
+            }
+            
+            // Berikan klasifikasi default bawaan
+            $koneksi->query("UPDATE akun SET tipe_detail = 'Persediaan' WHERE kode_akun IN ('1-1700', '1-1800', '1-1801', '1-1802', '1-1900')");
+        }
     }
 
     $sudahDicek = true;
@@ -466,16 +492,22 @@ function terapkan_template_akun_rumah_sakit($perbaruiYangSudahAda = false)
     }
 
     $akunTemplate = daftar_template_akun_rumah_sakit();
-    $sql = 'INSERT INTO akun (kode_akun, nama_akun, kategori, tipe_saldo, is_kas, aktif) VALUES (?, ?, ?, ?, ?, 1)';
+    $sql = 'INSERT INTO akun (kode_akun, nama_akun, kategori, tipe_saldo, tipe_detail, aktif) VALUES (?, ?, ?, ?, ?, 1)';
     if ($perbaruiYangSudahAda) {
-        $sql .= ' ON DUPLICATE KEY UPDATE nama_akun = VALUES(nama_akun), kategori = VALUES(kategori), tipe_saldo = VALUES(tipe_saldo), is_kas = VALUES(is_kas), aktif = 1';
+        $sql .= ' ON DUPLICATE KEY UPDATE nama_akun = VALUES(nama_akun), kategori = VALUES(kategori), tipe_saldo = VALUES(tipe_saldo), tipe_detail = VALUES(tipe_detail), aktif = 1';
     } else {
         $sql .= ' ON DUPLICATE KEY UPDATE aktif = aktif';
     }
 
     $stmt = $koneksi->prepare($sql);
     foreach ($akunTemplate as $akun) {
-        $stmt->bind_param('ssssi', $akun['kode_akun'], $akun['nama_akun'], $akun['kategori'], $akun['tipe_saldo'], $akun['is_kas']);
+        $tipeDetail = 'Umum';
+        if ($akun['is_kas'] == 1) {
+            $tipeDetail = 'Kas/Bank';
+        } elseif (in_array($akun['kode_akun'], ['1-1700', '1-1800', '1-1801', '1-1802', '1-1900'])) {
+            $tipeDetail = 'Persediaan';
+        }
+        $stmt->bind_param('sssss', $akun['kode_akun'], $akun['nama_akun'], $akun['kategori'], $akun['tipe_saldo'], $tipeDetail);
         $stmt->execute();
     }
     $stmt->close();
@@ -699,27 +731,33 @@ function render_header($judul, $halamanAktif = '')
     $flash = ambil_flash();
     $logoPerusahaan = $pengaturan['logo'] ?? '';
     $menu = [
-        'dashboard' => ['label' => 'Dashboard', 'url' => 'index.php'],
-        'akun' => ['label' => 'Daftar Akun', 'url' => 'akun.php'],
-        'jurnal' => ['label' => 'Jurnal Umum', 'url' => 'jurnal_umum.php'],
-        'jurnal_penyesuaian' => ['label' => 'Jurnal Penyesuaian', 'url' => 'jurnal_penyesuaian.php'],
-        'aset_tetap' => ['label' => 'Aset Tetap', 'url' => 'aset_tetap.php'],
-        'buku_besar' => ['label' => 'Buku Besar', 'url' => 'buku_besar.php'],
-        'hutang' => ['label' => 'Hutang', 'url' => 'hutang.php'],
-        'piutang' => ['label' => 'Piutang', 'url' => 'piutang.php'],
-        'arus_kas' => ['label' => 'Arus Kas', 'url' => 'arus_kas.php'],
-        'neraca' => ['label' => 'Neraca', 'url' => 'neraca.php'],
-        'laba_rugi' => ['label' => 'Laba Rugi', 'url' => 'laba_rugi.php'],
-        'perubahan_ekuitas' => ['label' => 'Perubahan Ekuitas', 'url' => 'perubahan_ekuitas.php'],
-        'tahun_buku' => ['label' => 'Tahun Buku', 'url' => 'tahun_buku.php'],
+        'dashboard' => ['label' => 'Dashboard', 'url' => 'index.php', 'kategori' => 'Utama'],
+        
+        'akun' => ['label' => 'Daftar Akun', 'url' => 'akun.php', 'kategori' => 'Pengaturan Awal'],
+        'tahun_buku' => ['label' => 'Tahun Buku', 'url' => 'tahun_buku.php', 'kategori' => 'Pengaturan Awal'],
+        
+        'jurnal' => ['label' => 'Jurnal Umum', 'url' => 'jurnal_umum.php', 'kategori' => 'Pencatatan Harian'],
+        'hutang' => ['label' => 'Hutang', 'url' => 'hutang.php', 'kategori' => 'Pencatatan Harian'],
+        'piutang' => ['label' => 'Piutang', 'url' => 'piutang.php', 'kategori' => 'Pencatatan Harian'],
+        
+        'aset_tetap' => ['label' => 'Aset Tetap', 'url' => 'aset_tetap.php', 'kategori' => 'Penyesuaian Periodik'],
+        'jurnal_penyesuaian' => ['label' => 'Jurnal Penyesuaian', 'url' => 'jurnal_penyesuaian.php', 'kategori' => 'Penyesuaian Periodik'],
+        
+        'buku_besar' => ['label' => 'Buku Besar', 'url' => 'buku_besar.php', 'kategori' => 'Laporan & Rekap'],
+        'pendapatan_beban' => ['label' => 'Pendapatan & Pengeluaran', 'url' => 'pendapatan_beban.php', 'kategori' => 'Laporan & Rekap'],
+        
+        'laba_rugi' => ['label' => 'Laba Rugi', 'url' => 'laba_rugi.php', 'kategori' => 'Laporan Keuangan'],
+        'perubahan_ekuitas' => ['label' => 'Perubahan Ekuitas', 'url' => 'perubahan_ekuitas.php', 'kategori' => 'Laporan Keuangan'],
+        'neraca' => ['label' => 'Neraca', 'url' => 'neraca.php', 'kategori' => 'Laporan Keuangan'],
+        'arus_kas' => ['label' => 'Arus Kas', 'url' => 'arus_kas.php', 'kategori' => 'Laporan Keuangan'],
     ];
 
     if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
-        $menu['pengguna'] = ['label' => 'Kelola Pengguna', 'url' => 'pengguna.php'];
+        $menu['pengguna'] = ['label' => 'Kelola Pengguna', 'url' => 'pengguna.php', 'kategori' => 'Sistem & Bantuan'];
     }
 
-    $menu['panduan'] = ['label' => 'Panduan Aplikasi', 'url' => 'panduan.php'];
-    $menu['pengaturan'] = ['label' => 'Pengaturan', 'url' => 'pengaturan.php'];
+    $menu['panduan'] = ['label' => 'Panduan Aplikasi', 'url' => 'panduan.php', 'kategori' => 'Sistem & Bantuan'];
+    $menu['pengaturan'] = ['label' => 'Pengaturan', 'url' => 'pengaturan.php', 'kategori' => 'Sistem & Bantuan'];
     ?>
     <!doctype html>
     <html lang="id">
@@ -743,7 +781,15 @@ function render_header($judul, $halamanAktif = '')
                 <p class="subtle">Pencatatan jurnal, buku besar, hutang, piutang, arus kas, dan neraca.</p>
             </div>
             <nav class="menu">
-                <?php foreach ($menu as $kunci => $item) { ?>
+                <?php 
+                $kategoriTerakhir = '';
+                foreach ($menu as $kunci => $item) { 
+                    $kat = $item['kategori'] ?? '';
+                    if ($kat !== $kategoriTerakhir && $kat !== '') {
+                        echo '<span class="menu-section-title">' . e($kat) . '</span>';
+                        $kategoriTerakhir = $kat;
+                    }
+                    ?>
                     <a href="<?php echo e($item['url']); ?>" class="<?php echo $halamanAktif === $kunci ? 'aktif' : ''; ?>"><?php echo e($item['label']); ?></a>
                 <?php } ?>
             </nav>
@@ -796,7 +842,7 @@ function render_footer()
 
 function ambil_daftar_akun()
 {
-    // Sinkronisasi hanya diperlukan jika schema belum siap (ditangani oleh ambil_pengaturan)
+    sinkronisasi_skema_akun();
     return kueri_semua(
         "SELECT a.*,
                 p.nama_akun AS nama_induk,
@@ -958,12 +1004,12 @@ function simpan_akun($data)
 
     sinkronisasi_skema_akun();
 
-    $kodeAkun  = trim($data['kode_akun'] ?? '');
-    $namaAkun  = trim($data['nama_akun'] ?? '');
-    $kategori  = trim($data['kategori'] ?? 'Aset');
-    $tipeSaldo = trim($data['tipe_saldo'] ?? 'Debit');
-    $isKas     = isset($data['is_kas']) ? 1 : 0;
-    $parentId  = ($data['parent_id'] ?? '') !== '' ? (int) $data['parent_id'] : null;
+    $kodeAkun   = trim($data['kode_akun'] ?? '');
+    $namaAkun   = trim($data['nama_akun'] ?? '');
+    $kategori   = trim($data['kategori'] ?? 'Aset');
+    $tipeSaldo  = trim($data['tipe_saldo'] ?? 'Debit');
+    $tipeDetail = trim($data['tipe_detail'] ?? 'Umum');
+    $parentId   = ($data['parent_id'] ?? '') !== '' ? (int) $data['parent_id'] : null;
 
     if ($kodeAkun === '' || $namaAkun === '') {
         throw new Exception('Kode akun dan nama akun wajib diisi.');
@@ -980,8 +1026,8 @@ function simpan_akun($data)
         }
     }
 
-    $stmt = $koneksi->prepare('INSERT INTO akun (kode_akun, parent_id, nama_akun, kategori, tipe_saldo, is_kas, aktif) VALUES (?, ?, ?, ?, ?, ?, 1)');
-    $stmt->bind_param('sisssi', $kodeAkun, $parentId, $namaAkun, $kategori, $tipeSaldo, $isKas);
+    $stmt = $koneksi->prepare('INSERT INTO akun (kode_akun, parent_id, nama_akun, kategori, tipe_saldo, tipe_detail, aktif) VALUES (?, ?, ?, ?, ?, ?, 1)');
+    $stmt->bind_param('sissss', $kodeAkun, $parentId, $namaAkun, $kategori, $tipeSaldo, $tipeDetail);
 
     if (!$stmt->execute()) {
         $pesan = $stmt->error;
@@ -1004,12 +1050,12 @@ function ubah_akun($id, $data)
         throw new Exception('Akun yang akan diubah tidak ditemukan.');
     }
 
-    $kodeAkun  = trim($data['kode_akun'] ?? '');
-    $namaAkun  = trim($data['nama_akun'] ?? '');
-    $kategori  = trim($data['kategori'] ?? 'Aset');
-    $tipeSaldo = trim($data['tipe_saldo'] ?? 'Debit');
-    $isKas     = isset($data['is_kas']) ? 1 : 0;
-    $parentId  = ($data['parent_id'] ?? '') !== '' ? (int) $data['parent_id'] : null;
+    $kodeAkun   = trim($data['kode_akun'] ?? '');
+    $namaAkun   = trim($data['nama_akun'] ?? '');
+    $kategori   = trim($data['kategori'] ?? 'Aset');
+    $tipeSaldo  = trim($data['tipe_saldo'] ?? 'Debit');
+    $tipeDetail = trim($data['tipe_detail'] ?? 'Umum');
+    $parentId   = ($data['parent_id'] ?? '') !== '' ? (int) $data['parent_id'] : null;
 
     if ($kodeAkun === '' || $namaAkun === '') {
         throw new Exception('Kode akun dan nama akun wajib diisi.');
@@ -1036,8 +1082,8 @@ function ubah_akun($id, $data)
         }
     }
 
-    $stmt = $koneksi->prepare('UPDATE akun SET kode_akun = ?, parent_id = ?, nama_akun = ?, kategori = ?, tipe_saldo = ?, is_kas = ? WHERE id = ?');
-    $stmt->bind_param('sissiii', $kodeAkun, $parentId, $namaAkun, $kategori, $tipeSaldo, $isKas, $id);
+    $stmt = $koneksi->prepare('UPDATE akun SET kode_akun = ?, parent_id = ?, nama_akun = ?, kategori = ?, tipe_saldo = ?, tipe_detail = ? WHERE id = ?');
+    $stmt->bind_param('sissssi', $kodeAkun, $parentId, $namaAkun, $kategori, $tipeSaldo, $tipeDetail, $id);
 
     if (!$stmt->execute()) {
         $pesan = $stmt->error;
