@@ -252,6 +252,58 @@ details.panduan-item[open] summary::after {
             </div>
         </div>
     </details>
+
+    <!-- Item 7: Panduan Laporan & Akuntansi Persediaan -->
+    <details class="panduan-item">
+        <summary>7. Panduan Laporan &amp; Standar Akuntansi Persediaan (PSAK 14 / SAK EP)</summary>
+        <div class="panduan-content">
+            <p>Menu <strong>Laporan Persediaan</strong> menggabungkan Laporan Mutasi Nilai Persediaan dan Riwayat Penyesuaian persediaan guna memenuhi asas kecocokan beban-pendapatan (<em>matching principle</em>) serta standar akuntansi yang berlaku umum.</p>
+
+            <h4>Dasar Hukum &amp; Standar Akuntansi (PSAK 14 / SAK EP)</h4>
+            <ul>
+                <li><strong>Definisi Aset Persediaan</strong>: Sesuai standar akuntansi keuangan (PSAK 14 / SAK EP), persediaan adalah aset dalam bentuk bahan atau perlengkapan (misalnya perlengkapan kantor, ATK, obat-obatan, BHP pelayanan) yang digunakan dalam proses pemberian jasa atau operasi harian perusahaan.</li>
+                <li><strong>Metode Pencatatan</strong>: Sistem ini mendukung pencatatan persediaan secara <strong>periodik (fisik)</strong>. Pembelian persediaan dicatat ke akun persediaan (sebagai Aset) melalui Jurnal Umum, dan di akhir periode dilakukan penyesuaian (Stock Opname) untuk mengukur nilai barang habis pakai yang sudah benar-benar terpakai.</li>
+                <li><strong>Matching Principle (Pengakuan Beban)</strong>: Nilai persediaan yang telah habis dikonsumsi harus diakui sebagai <strong>Beban/Biaya</strong> pada periode terjadinya pemakaian agar laba rugi dilaporkan secara adil.</li>
+            </ul>
+
+            <h4>Alur Penggunaan Fitur Persediaan di Aplikasi</h4>
+            <ol style="margin-bottom: 14px;">
+                <li>
+                    <strong>Langkah 1: Pembelian Persediaan (Barang Masuk)</strong>
+                    <br>Catat transaksi pembelian persediaan di menu <strong>Jurnal Umum</strong>.
+                    <br>
+                    <br><strong>Kasus A: Pembelian secara Kredit (Hutang)</strong>
+                    <br>Pembelian Obat & BHP medis dari Pemasok sebesar Rp10.000.000,00 dengan cara Hutang Tempo:
+                    <div class="example-box">
+                        <span class="badge badge-debit">DEBIT</span> <code>1-1700 - Persediaan Obat & BHP</code> &rarr; Rp10.000.000<br>
+                        <span class="badge badge-kredit">KREDIT</span> <code>2-1200 - Hutang Obat & BHP</code> &rarr; Rp10.000.000
+                    </div>
+                    <strong>Kasus B: Pembayaran Hutang Persediaan Tersebut</strong>
+                    <br>Melunasi hutang pembelian obat di atas melalui transfer rekening Bank Mandiri:
+                    <div class="example-box">
+                        <span class="badge badge-debit">DEBIT</span> <code>2-1200 - Hutang Obat & BHP</code> &rarr; Rp10.000.000<br>
+                        <span class="badge badge-kredit">KREDIT</span> <code>1-1300 - Tabungan Bank Mandiri</code> &rarr; Rp10.000.000
+                    </div>
+                </li>
+                <li>
+                    <strong>Langkah 2: Melakukan Stock Opname (Fisik)</strong>
+                    <br>Di akhir bulan, lakukan perhitungan fisik persediaan yang masih tersisa di gudang/kantor.
+                </li>
+                <li>
+                    <strong>Langkah 3: Jurnal Penyesuaian (Barang Keluar)</strong>
+                    <br>Catat selisih nilai barang yang terpakai melalui menu <strong>Jurnal Penyesuaian</strong>. Contoh:
+                    <div class="example-box">
+                        <span class="badge badge-debit">DEBIT</span> <code>6-2000 - Biaya Perlengkapan Kantor</code> &rarr; Rp2.000.000<br>
+                        <span class="badge badge-kredit">KREDIT</span> <code>1-1800 - Perlengkapan Kantor</code> &rarr; Rp2.000.000
+                    </div>
+                </li>
+                <li>
+                    <strong>Langkah 4: Pantau Laporan Persediaan</strong>
+                    <br>Buka menu <strong>Laporan Persediaan</strong> di sidebar. Gunakan filter akun persediaan dan periode tanggal untuk memantau ringkasan saldo awal, mutasi masuk (Debit), mutasi keluar (Kredit), hingga sisa saldo aktif persediaan Anda secara terpadu.
+                </li>
+            </ol>
+        </div>
+    </details>
 </div>
 
 <?php
