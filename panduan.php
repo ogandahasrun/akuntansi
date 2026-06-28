@@ -304,6 +304,90 @@ details.panduan-item[open] summary::after {
             </ol>
         </div>
     </details>
+
+    <!-- Item 8: Bagaimana Pendapatan & Beban Memengaruhi Neraca -->
+    <details class="panduan-item">
+        <summary>8. Bagaimana Transaksi Pendapatan &amp; Beban Memengaruhi Neraca (Ilustrasi Aliran Keuangan)</summary>
+        <div class="panduan-content">
+            <p>Meskipun akun <strong>Pendapatan</strong> dan <strong>Beban</strong> hanya dicantumkan di Laporan Laba Rugi dan tidak muncul langsung sebagai baris di Neraca, transaksi keduanya secara otomatis memengaruhi keseimbangan Neraca pada akhir periode.</p>
+
+            <h4>Ilustrasi Aliran Keuangan:</h4>
+            
+            <p><strong>1. Posisi Awal Neraca (Sebelum Transaksi):</strong></p>
+            <ul>
+                <li><strong>Sisi Kiri (Aset)</strong>: <code>1-1200 Tabungan Bank BNI</code> = Rp50.000.000</li>
+                <li><strong>Sisi Kanan (Pasiva)</strong>: <code>2-1100 Hutang Usaha</code> = Rp10.000.000, <code>3-1100 Modal Pemilik</code> = Rp40.000.000</li>
+                <li><em>Persamaan</em>: Aset (Rp50jt) = Hutang (Rp10jt) + Modal (Rp40jt) &rarr; <strong>Seimbang</strong>.</li>
+            </ul>
+
+            <p><strong>2. Pencatatan Transaksi Baru (Jurnal Umum):</strong></p>
+            <ul>
+                <li>
+                    <strong>Transaksi 1: Menerima Pendapatan</strong>
+                    <br>Menerima transfer pendapatan pelayanan ke Bank BNI sebesar Rp15.000.000.
+                    <div class="example-box">
+                        <span class="badge badge-debit">DEBIT</span> <code>1-1200 Tabungan Bank BNI</code> &rarr; Rp15.000.000<br>
+                        <span class="badge badge-kredit">KREDIT</span> <code>4-1100 Pendapatan Umum</code> &rarr; Rp15.000.000
+                    </div>
+                </li>
+                <li>
+                    <strong>Transaksi 2: Membayar Beban</strong>
+                    <br>Membayar biaya gaji perawat secara transfer via Bank BNI sebesar Rp5.000.000.
+                    <div class="example-box">
+                        <span class="badge badge-debit">DEBIT</span> <code>6-1900 Biaya Gaji Dan Upah</code> &rarr; Rp5.000.000<br>
+                        <span class="badge badge-kredit">KREDIT</span> <code>1-1200 Tabungan Bank BNI</code> &rarr; Rp5.000.000
+                    </div>
+                </li>
+            </ul>
+
+            <p><strong>3. Perhitungan Laba Rugi:</strong></p>
+            <p>Laba Bersih dihitung: Pendapatan (Rp15.000.000) - Beban (Rp5.000.000) = <strong>Laba Bersih Rp10.000.000</strong>.</p>
+
+            <p><strong>4. Efek Akhir pada Neraca:</strong></p>
+            <ul>
+                <li><strong>Sisi Kiri (Aset)</strong>: Saldo Bank BNI bertambah bersih sebesar Rp10.000.000 (Pendapatan Rp15jt - Beban Rp5jt), sehingga saldo akhir Bank BNI menjadi <strong>Rp60.000.000</strong>.</li>
+                <li><strong>Sisi Kanan (Pasiva)</strong>: Laba Bersih Rp10.000.000 otomatis masuk ke akun ekuitas/modal sebagai <strong>Laba Tahun Berjalan</strong>. Nilai modal akhir menjadi <strong>Rp50.000.000</strong> (Modal Awal Rp40jt + Laba Rp10jt).</li>
+            </ul>
+
+            <p><strong>Hasil Akhir Neraca Setelah Penyesuaian:</strong></p>
+            <table class="table compact" style="margin-top: 10px;">
+                <thead>
+                    <tr>
+                        <th>Sisi Kiri (Aset)</th>
+                        <th class="align-right">Nominal</th>
+                        <th>Sisi Kanan (Kewajiban &amp; Modal)</th>
+                        <th class="align-right">Nominal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Tabungan Bank BNI</td>
+                        <td class="align-right">Rp60.000.000</td>
+                        <td>Hutang Usaha</td>
+                        <td class="align-right">Rp10.000.000</td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td class="align-right"></td>
+                        <td>Modal Pemilik</td>
+                        <td class="align-right">Rp40.000.000</td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td class="align-right"></td>
+                        <td>Laba Tahun Berjalan (Laba Rugi)</td>
+                        <td class="align-right">Rp10.000.000</td>
+                    </tr>
+                    <tr class="total-row">
+                        <td>TOTAL ASET</td>
+                        <td class="align-right">Rp60.000.000</td>
+                        <td>TOTAL PASIVA</td>
+                        <td class="align-right">Rp60.000.000</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </details>
 </div>
 
 <?php
