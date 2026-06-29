@@ -182,6 +182,34 @@ details.panduan-item[open] summary::after {
                 <span class="badge badge-debit">DEBIT</span> <code>6-1500 - Biaya Sewa</code> &rarr; Rp1.000.000<br>
                 <span class="badge badge-kredit">KREDIT</span> <code>1-2004 - Biaya Dibayar Dimuka</code> &rarr; Rp1.000.000
             </div>
+
+            <h4>Kasus D: Penjurnalan Klaim &amp; Selisih Tarif BPJS (Metode B)</h4>
+            <p><strong>1. Saat Pasien Pulang (Pencatatan Piutang Awal Sebesar Tarif RS):</strong></p>
+            <p>Total tagihan rincian tindakan pasien berdasarkan tarif rumah sakit sebesar Rp10.000.000,00.</p>
+            <div class="example-box">
+                <span class="badge badge-debit">DEBIT</span> <code>1-1500 - Piutang BPJS</code> &rarr; Rp10.000.000<br>
+                <span class="badge badge-kredit">KREDIT</span> <code>4-1101 - Pendapatan BPJS</code> &rarr; Rp10.000.000
+            </div>
+            
+            <p><strong>2. Saat Pembayaran Cair &amp; Penyesuaian Selisih (Dua Skenario):</strong></p>
+            <ul>
+                <li>
+                    <strong>Skenario 1 (Selisih Kurang):</strong> BPJS membayar paket INA-CBG sebesar Rp8.500.000,00. Selisih kurang Rp1.500.000,00 diakui sebagai potongan pendapatan:
+                    <div class="example-box">
+                        <span class="badge badge-debit">DEBIT</span> <code>1-1200 - Tabungan Bank BNI</code> &rarr; Rp8.500.000<br>
+                        <span class="badge badge-debit">DEBIT</span> <code>4-1106 - Potongan Pendapatan BPJS</code> &rarr; Rp1.500.000<br>
+                        <span class="badge badge-kredit">KREDIT</span> <code>1-1500 - Piutang BPJS</code> &rarr; Rp10.000.000
+                    </div>
+                </li>
+                <li>
+                    <strong>Skenario 2 (Selisih Lebih):</strong> BPJS membayar paket INA-CBG sebesar Rp11.500.000,00. Selisih lebih Rp1.500.000,00 diakui sebagai pendapatan lain-lain:
+                    <div class="example-box">
+                        <span class="badge badge-debit">DEBIT</span> <code>1-1200 - Tabungan Bank BNI</code> &rarr; Rp11.500.000<br>
+                        <span class="badge badge-kredit">KREDIT</span> <code>1-1500 - Piutang BPJS</code> &rarr; Rp10.000.000<br>
+                        <span class="badge badge-kredit">KREDIT</span> <code>8-1300 - Pendapatan Lain-lain</code> &rarr; Rp1.500.000
+                    </div>
+                </li>
+            </ul>
         </div>
     </details>
 
@@ -386,6 +414,69 @@ details.panduan-item[open] summary::after {
                     </tr>
                 </tbody>
             </table>
+        </div>
+    </details>
+
+    <!-- Item 9: Panduan Perpajakan PPN Rumah Sakit -->
+    <details class="panduan-item">
+        <summary>9. Panduan Aspek Perpajakan PPN Rumah Sakit (Obat &amp; BHP serta Rawat Inap &amp; Rawat Jalan)</summary>
+        <div class="panduan-content">
+            <p>Penerapan PPN (Pajak Pertambahan Nilai) di Rumah Sakit memiliki perlakuan khusus berdasarkan undang-undang perpajakan karena adanya penggabungan antara penyerahan jasa/barang yang terutang PPN (Komersial) dan yang dibebaskan dari PPN (Jasa Medis).</p>
+
+            <h4>A. Dasar Hukum PPN Rumah Sakit (PP No. 49 Tahun 2022)</h4>
+            <ul>
+                <li><strong>Obat Rawat Inap &amp; BHP Medis (BEBAS PPN)</strong>: Seluruh pemakaian obat-obatan dan Bahan Habis Pakai (BHP) medis (seperti spuit, kassa, infus, handscoon) untuk pasien rawat inap digabungkan dalam satu paket pelayanan jasa medis yang dibebaskan dari pengenaan PPN Keluaran.</li>
+                <li><strong>Obat Rawat Jalan (KENA PPN 11%)</strong>: Penyerahan obat kepada pasien rawat jalan melalui apotek RS dikategorikan sebagai penyerahan Barang Kena Pajak (BKP) eceran komersial yang terpisah dari jasa medis, sehingga **wajib dipungut PPN Keluaran sebesar 11%**.</li>
+            </ul>
+
+            <h4>B. Solusi Penginputan PPN Masukan Gabungan dari Supplier</h4>
+            <p>Kendala yang sering dihadapi adalah PPN Masukan dari supplier dicampur dalam satu faktur pembelian (berisi obat rawat jalan, obat rawat inap, dan BHP). Berikut adalah dua metode penyelesaian akuntansi yang diizinkan:</p>
+
+            <h5>Metode 1: Pro-Rata Bulanan (Sesuai PMK No. 135/PMK.03/2021)</h5>
+            <p>RS mencatat seluruh PPN Masukan belanja, lalu di akhir bulan disesuaikan secara proporsional berdasarkan persentase omset rawat jalan terhadap total omset pelayanan. PPN Masukan yang tidak dapat dikreditkan dipindahkan ke akun beban pajak.</p>
+            
+            <p><strong>Contoh Kasus</strong>: Pembelian obat &amp; BHP sebesar Rp10.000.000 + PPN Masukan Rp1.100.000 (total tagihan Rp11.100.000). Asumsi di akhir bulan rasio omset Rawat Jalan (kena PPN) adalah 30%.</p>
+            
+            <ol style="margin-bottom: 14px;">
+                <li>
+                    <strong>Saat Input Faktur Pembelian Supplier:</strong>
+                    <div class="example-box">
+                        <span class="badge badge-debit">DEBIT</span> <code>1-1700 - Persediaan Obat &amp; BHP</code> &rarr; Rp10.000.000<br>
+                        <span class="badge badge-debit">DEBIT</span> <code>1-2000 - PPN Masukan</code> &rarr; Rp1.100.000<br>
+                        <span class="badge badge-kredit">KREDIT</span> <code>2-1200 - Hutang Obat &amp; BHP</code> &rarr; Rp11.100.000
+                    </div>
+                </li>
+                <li>
+                    <strong>Saat Jurnal Penyesuaian Akhir Bulan (Membuang 70% PPN Masukan tidak dapat dikreditkan):</strong>
+                    <br>Nilai penyesuaian: $70\% \times \text{Rp1.100.000} = \text{Rp770.000}$.
+                    <div class="example-box">
+                        <span class="badge badge-debit">DEBIT</span> <code>6-3126 - Biaya Pajak PPN</code> &rarr; Rp770.000<br>
+                        <span class="badge badge-kredit">KREDIT</span> <code>1-2000 - PPN Masukan</code> &rarr; Rp770.000
+                    </div>
+                    <em>(Saldo akun PPN Masukan tersisa Rp330.000 yang berhak dikreditkan terhadap PPN Keluaran).</em>
+                </li>
+            </ol>
+
+            <h5>Metode 2: Kapitalisasi Pajak ke Persediaan (Alternatif Paling Praktis)</h5>
+            <p>Seluruh PPN Masukan saat belanja langsung dimasukkan ke harga perolehan persediaan barang sehingga tidak perlu melakukan jurnal penyesuaian pro-rata bulanan yang rumit.</p>
+            <ol>
+                <li>
+                    <strong>Saat Input Faktur Pembelian Supplier:</strong>
+                    <br>Nilai pajak langsung masuk menambahkan HPP persediaan.
+                    <div class="example-box">
+                        <span class="badge badge-debit">DEBIT</span> <code>1-1700 - Persediaan Obat &amp; BHP</code> &rarr; Rp11.100.000<br>
+                        <span class="badge badge-kredit">KREDIT</span> <code>2-1200 - Hutang Obat &amp; BHP</code> &rarr; Rp11.100.000
+                    </div>
+                </li>
+            </ol>
+
+            <h4>C. Contoh Jurnal Penjualan Obat Rawat Jalan (PPN Keluaran)</h4>
+            <p>Menjual obat ke pasien rawat jalan dengan harga obat Rp1.000.000 + PPN 11% (Rp110.000). Total kas diterima Rp1.110.000:</p>
+            <div class="example-box">
+                <span class="badge badge-debit">DEBIT</span> <code>1-1100 - Kas</code> &rarr; Rp1.110.000<br>
+                <span class="badge badge-kredit">KREDIT</span> <code>4-1115 - Pendapatan Farmasi</code> &rarr; Rp1.000.000<br>
+                <span class="badge badge-kredit">KREDIT</span> <code>2-1500 - PPN Keluaran</code> &rarr; Rp110.000
+            </div>
         </div>
     </details>
 </div>
